@@ -227,6 +227,18 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
   ufw allow 9000:9990/tcp >/dev/null
+elif command -v iptables >/dev/null 2>&1; then
+  # Cloud images (e.g. Oracle) often ship a default REJECT without ufw.
+  log "Opening web ports with iptables"
+  for port in "$PORT" 80 443; do
+    iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null \
+      || iptables -I INPUT 1 -p tcp --dport "$port" -j ACCEPT
+  done
+  iptables -C INPUT -p tcp --dport 9000:9990 -j ACCEPT 2>/dev/null \
+    || iptables -I INPUT 1 -p tcp --dport 9000:9990 -j ACCEPT
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save >/dev/null 2>&1 || true
+  fi
 fi
 
 # ------------------------------------------------------------------ 8. admin user
