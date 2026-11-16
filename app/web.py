@@ -177,6 +177,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
                 "branch_count": len(branches),
                 "running": sum(1 for b in branches if b.status == "running"),
                 "repo_display": _redact_url(project.repo_url),
+                "enterprise": bool((project.enterprise_repo_url or "").strip()),
             }
         )
     totals = {
@@ -213,6 +214,7 @@ def create_project(
     slug: str = Form(...),
     display_name: str = Form(""),
     repo_url: str = Form(""),
+    enterprise_repo_url: str = Form(""),
     odoo_version: str = Form(""),
     session: Session = Depends(get_session),
 ):
@@ -237,6 +239,7 @@ def create_project(
         slug=slug,
         display_name=display_name or slug,
         repo_url=repo_url.strip(),
+        enterprise_repo_url=enterprise_repo_url.strip(),
         odoo_version=odoo_version,
         webhook_secret=secrets.token_hex(24),
     )
@@ -283,12 +286,17 @@ async def project_settings_save(
     if error:
         return _back(f"/projects/{project_id}/settings", f"Invalid settings: {error}")
     old_repo_url = project.repo_url
+    old_enterprise_repo_url = project.enterprise_repo_url
     old_config = project.odoo_config
     project.display_name = str(form.get("display_name", "")).strip() or project.slug
     project.repo_url = str(form.get("repo_url", "")).strip()
+    project.enterprise_repo_url = str(form.get("enterprise_repo_url", "")).strip()
     project.odoo_config = odoo_config.dump_config(config)
-    if project.repo_url != old_repo_url:
-        message = "Project repository updated" if project.repo_url else "Project repository cleared"
+    if (
+        project.repo_url != old_repo_url
+        or project.enterprise_repo_url != old_enterprise_repo_url
+    ):
+        message = "Project repository settings updated"
     elif project.odoo_config != old_config:
         message = "Odoo configuration updated"
     else:
@@ -359,6 +367,7 @@ def project_page(project_id: int, request: Request, session: Session = Depends(g
             user,
             project=project,
             repo_display=_redact_url(project.repo_url),
+            enterprise=bool((project.enterprise_repo_url or "").strip()),
             grouped=grouped,
             stages=STAGES,
             events=events,
@@ -542,8 +551,11 @@ def start_branch(branch_id: int, request: Request, session: Session = Depends(ge
     if branch is None:
         return _back("/", "Branch not found")
     project = session.get(Project, branch.project_id)
+    enterprise = bool(project and (project.enterprise_repo_url or "").strip())
     try:
-        docker_ctl.start_server_container(branch, project.odoo_config if project else "")
+        docker_ctl.start_server_container(
+            branch, project.odoo_config if project else "", enterprise=enterprise
+        )
     except Exception as exc:  # noqa: BLE001 - surfaced in the UI
         return _back(f"/branches/{branch_id}", f"Could not start: {exc}")
     branch.status = "running"

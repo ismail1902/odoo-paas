@@ -8,6 +8,7 @@
       {% if project.repo_url %}{{ repo_display }}
       {% else %}<span class="muted">No repository configured &mdash; <a href="/projects/{{ project.id }}/settings">add one in project settings</a></span>{% endif %}
       · Odoo {{ project.odoo_version or 'default' }}
+      {% if enterprise %} · <span class="chip ent">Enterprise</span>{% endif %}
     </div>
   </div>
   <div class="row gap">

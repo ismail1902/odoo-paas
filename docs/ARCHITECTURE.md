@@ -52,6 +52,10 @@ PostgreSQL volume, files under `DATA_DIR`.
    `builds/branch-N/repo` (`gitops.sync`). Commit metadata is stored on the
    Build row. A project with no repo URL clears any previous checkout and
    continues with base Odoo; the URL can be added later.
+2b. **enterprise addons** — when `Project.enterprise_repo_url` is set, the
+   repository is cloned at the branch matching the project's Odoo version
+   into `builds/branch-N/enterprise` (mounted at `/mnt/enterprise`) and
+   added to `--addons-path`. A missing version branch fails the build.
 3. **installing requirements** — one-off container runs
    `python3 -m venv --system-site-packages /mnt/venv` (first time only) then
    `pip install -r requirements.txt` plus, if present, every

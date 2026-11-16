@@ -62,6 +62,7 @@
           <span class="chip">Odoo {{ p.odoo_version or default_odoo_version }}</span>
           <span class="chip">{{ row.branch_count }} branch{{ '' if row.branch_count == 1 else 'es' }}</span>
           <span class="chip {{ 'ok' if row.running else '' }}">{{ row.running }} running</span>
+          {% if row.enterprise %}<span class="chip ent">Enterprise</span>{% endif %}
         </div>
         <div class="project-actions">
           <a class="button small-btn" href="/projects/{{ p.id }}">Open</a>
@@ -120,6 +121,10 @@
         <input name="repo_url" placeholder="Leave empty to add later">
       </label>
       <p class="muted small">Leave empty to deploy base Odoo now; add the repository later in Project settings.</p>
+      <label>Enterprise addons repository URL (https, optional)
+        <input name="enterprise_repo_url" placeholder="Leave empty for community addons only">
+      </label>
+      <p class="muted small">Cloned at the selected Odoo version branch and added to the addons path.</p>
       <details class="repo-help">
         <summary class="small"><strong>Using a private repository?</strong></summary>
         {% include "partials/private_repo_help.html" %}

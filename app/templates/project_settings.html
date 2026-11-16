@@ -20,9 +20,17 @@
     <label>Git repository URL (https, optional)
       <input name="repo_url" value="{{ project.repo_url }}" placeholder="Leave empty to deploy base Odoo only">
     </label>
+    <label>Enterprise addons repository URL (https, optional)
+      <input name="enterprise_repo_url" value="{{ project.enterprise_repo_url }}" placeholder="Leave empty for community addons only">
+    </label>
     <p class="muted small">
-      Changes apply on the next Deploy. Clearing the URL removes the checkout; if the database
-      has custom modules installed, keep or restore the repository before deploying.
+      Enterprise addons are cloned at the project's Odoo version branch
+      ({{ project.odoo_version or 'default' }}) and added to the Odoo addons path. Use a
+      read-only token in the URL for private repositories.
+    </p>
+    <p class="muted small">
+      Changes apply on the next Deploy. Clearing a repository URL removes its checkout; if the
+      database has custom or enterprise modules installed, keep or restore the code before deploying.
     </p>
     <div class="settings-help">
       <h4>Private repositories</h4>

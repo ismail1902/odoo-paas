@@ -22,6 +22,9 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
 - **Per-project Odoo version.** Pick the Odoo version when creating a
   project (any version with a built base image, e.g. 17.0, 19.0, 20.0);
   every branch of the project runs that image.
+- **Optional Enterprise addons.** Add an Enterprise addons repository URL
+  per project; it is cloned at the matching Odoo version branch and added
+  to the Odoo addons path.
 - **Push-to-deploy.** GitHub webhooks (HMAC-verified) trigger builds; a manual
   *Deploy* button does the same.
 - **Works before your first push.** An empty repository (or a branch that is

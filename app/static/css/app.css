@@ -176,6 +176,7 @@ h3 { margin: 0 0 10px; }
   background: var(--panel-2); color: var(--muted); font-size: 11px;
 }
 .chip.ok { color: var(--ok); border-color: var(--ok); }
+.chip.ent { color: var(--accent-2); border-color: var(--accent-2); }
 .project-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; }
 .status-dot {
   flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%;

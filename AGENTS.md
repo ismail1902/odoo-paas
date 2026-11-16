@@ -130,6 +130,10 @@ There is no test suite; verify by:
   deploys base Odoo, clears any stale checkout, and later builds
   auto-install configured modules that are not installed yet
   (`docker_ctl.installed_modules`). Do not turn this into a BuildError.
+- Enterprise addons live in `builds/branch-N/enterprise` (mounted at
+  `/mnt/enterprise`). `docker_ctl.server_command` / `task_command` add it to
+  `--addons-path` only when `enterprise=True`; pass the project flag through
+  the builder and branch Start.
 - Development builds with tests enabled run **only the modules listed in
   branch Settings** (`--test-tags <modules>`); the base/web suite is
   deliberately skipped because its barcode/PDF/font tests need tooling the

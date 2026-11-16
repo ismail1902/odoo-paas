@@ -74,8 +74,11 @@ cd /opt/odoo-paas
 The gear button on a project page opens `/projects/<id>/settings` (a separate
 page). It contains:
 
-- display name and Git repository URL (optional), plus the private-repository
-  credential guide;
+- display name, Git repository URL (optional) and Enterprise addons
+  repository URL (optional), plus the private-repository credential guide;
+  the Enterprise repository is cloned at the project's Odoo version branch
+  (e.g. `17.0`) into each branch's `/mnt/enterprise` and added to the addons
+  path when configured;
 - the Odoo server configuration: performance (workers, cron threads, request
   and memory limits, DB connections), HTTP/security (proxy mode, X-Sendfile,
   database-list visibility, unaccent), logging, SMTP, developer mode, and an
@@ -100,6 +103,8 @@ repo/
 
 Odoo core comes from the image; your checkout is added to `--addons-path`
 after `/opt/odoo/addons`. Databases are named `paas_<project>_<branch>`.
+Enterprise addons are cloned separately into `builds/branch-N/enterprise`
+(mounted at `/mnt/enterprise`) and are not mixed into your repository.
 
 ### Private repositories
 

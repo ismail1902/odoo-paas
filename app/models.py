@@ -52,6 +52,7 @@ class Project(SQLModel, table=True):
     slug: str = Field(index=True, unique=True)
     display_name: str = ""
     repo_url: str = ""
+    enterprise_repo_url: str = ""  # optional Odoo Enterprise addons checkout
     odoo_version: str = ""  # e.g. "17.0" - picks odoo-paas/base:<version>
     odoo_config: str = ""  # JSON object, see app/odoo_config.py
     webhook_secret: str = ""

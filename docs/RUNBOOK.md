@@ -46,6 +46,9 @@ server`). Common causes:
   docs/DEPLOYMENT.md → Private repositories), no repository configured (add
   one in Project settings and Deploy), repository/branch not pushed yet
   (deploys base Odoo instead), force-push rewrote history.
+- **enterprise addons**: `syncing enterprise addons` failed. The Enterprise
+  repository must have a branch named exactly like the project's Odoo version
+  (`17.0`, `19.0`, …); private repositories need a read-only token in the URL.
 - **installing requirements**: a repo `requirements.txt` needs a system
   library absent from the base image → add it in
   `docker/odoo-base/Dockerfile` and `sudo ./install.sh --rebuild-base`.

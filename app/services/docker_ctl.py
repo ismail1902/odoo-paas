@@ -87,8 +87,12 @@ def filestore_dir(branch) -> Path:
     return branch_dir(branch) / "filestore"
 
 
+def enterprise_dir(branch) -> Path:
+    return branch_dir(branch) / "enterprise"
+
+
 def ensure_branch_dirs(branch) -> None:
-    for path in (repo_dir(branch), venv_dir(branch), filestore_dir(branch)):
+    for path in (repo_dir(branch), venv_dir(branch), filestore_dir(branch), enterprise_dir(branch)):
         path.mkdir(parents=True, exist_ok=True)
         _make_container_writable(path)
 
@@ -153,6 +157,7 @@ def _volumes(branch) -> dict:
         str(repo_dir(branch)): {"bind": "/mnt/user", "mode": "rw"},
         str(filestore_dir(branch)): {"bind": "/mnt/filestore", "mode": "rw"},
         str(venv_dir(branch)): {"bind": "/mnt/venv", "mode": "rw"},
+        str(enterprise_dir(branch)): {"bind": "/mnt/enterprise", "mode": "rw"},
     }
 
 
@@ -169,26 +174,29 @@ def _env(branch) -> dict:
     }
 
 
-def _base_odoo_argv(branch) -> list:
+def _base_odoo_argv(branch, enterprise: bool = False) -> list:
+    addons = "/opt/odoo/addons,/mnt/user"
+    if enterprise:
+        addons += ",/mnt/enterprise"
     return [
         "/mnt/venv/bin/python",
         "/opt/odoo/odoo-bin",
         "-d",
         branch.db_name,
         "--addons-path",
-        "/opt/odoo/addons,/mnt/user",
+        addons,
         "--data-dir",
         "/mnt/filestore",
     ]
 
 
-def server_command(branch, config=None) -> list:
+def server_command(branch, config=None, enterprise: bool = False) -> list:
     conf = odoo_config.parse_config(config)
     log_level = conf.get("log_level", "info")
     max_cron = conf.get("max_cron_threads")
     if max_cron is None:
         max_cron = 2 if branch.stage == "production" else 0
-    return _base_odoo_argv(branch) + [
+    return _base_odoo_argv(branch, enterprise) + [
         "--db-filter",
         f"^{branch.db_name}$",
         # Odoo >= 19 binds 127.0.0.1 by default; the published port needs 0.0.0.0.
@@ -211,9 +219,10 @@ def task_command(
     demo: bool = False,
     tests: bool = False,
     test_tags: str = "",
+    enterprise: bool = False,
 ) -> list:
     """One-off Odoo command (DB init/update/tests)."""
-    cmd = _base_odoo_argv(branch) + ["--no-http", "--stop-after-init"]
+    cmd = _base_odoo_argv(branch, enterprise) + ["--no-http", "--stop-after-init"]
     cmd += ["--log-level", "test" if tests else "info"]
     if install:
         cmd += ["-i", install]
@@ -241,7 +250,7 @@ def ensure_network() -> None:
 # --- Runtime containers ----------------------------------------------------------
 
 
-def start_server_container(branch, config=None) -> None:
+def start_server_container(branch, config=None, enterprise: bool = False) -> None:
     """(Re)create and start the detached Odoo HTTP server for a branch."""
     ensure_branch_dirs(branch)
     if settings.MOCK_DOCKER:
@@ -255,7 +264,7 @@ def start_server_container(branch, config=None) -> None:
         pass
     c.containers.run(
         image_for(branch),
-        server_command(branch, config),
+        server_command(branch, config, enterprise),
         name=name,
         detach=True,
         remove=False,
@@ -351,7 +360,7 @@ def ensure_venv(branch, log: Callable[[str], None]) -> int:
         "  echo \"venv created (python $want)\"; "
         "fi; "
         "found=0; "
-        "for req in requirements.txt $(find . -mindepth 2 -maxdepth 2 -name requirements.txt 2>/dev/null); do "
+        "for req in requirements.txt $(find . -mindepth 2 -maxdepth 2 -name requirements.txt 2>/dev/null) $(find /mnt/enterprise -mindepth 1 -maxdepth 2 -name requirements.txt 2>/dev/null); do "
         "  if [ -f \"$req\" ]; then found=1; /mnt/venv/bin/pip install --quiet -r \"$req\"; fi; "
         "done; "
         "if [ \"$found\" = \"1\" ]; then echo 'requirements installed'; else echo 'no requirements.txt found'; fi"

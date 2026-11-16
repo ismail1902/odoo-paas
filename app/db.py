@@ -76,6 +76,10 @@ def _migrate() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE project ADD COLUMN odoo_config VARCHAR DEFAULT ''"
             )
+        if "enterprise_repo_url" not in project_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE project ADD COLUMN enterprise_repo_url VARCHAR DEFAULT ''"
+            )
 
 
 @contextmanager

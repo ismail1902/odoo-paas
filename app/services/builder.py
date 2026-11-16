@@ -14,6 +14,7 @@ docs/RUNBOOK.md.
 """
 from __future__ import annotations
 
+import shutil
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -115,6 +116,23 @@ def run_build(build_id: int) -> None:
                 session.add(row)
             log(f"commit {info['sha'][:10]} by {info['author']}: {info['message']}")
 
+        enterprise_url = (project.enterprise_repo_url or "").strip()
+        if enterprise_url:
+            step("syncing enterprise addons")
+            version = branch.odoo_version or settings.ODOO_VERSION
+            enterprise_sha = gitops.sync(
+                docker_ctl.enterprise_dir(branch), enterprise_url, version
+            )
+            if enterprise_sha is None:
+                raise BuildError(
+                    f"enterprise addons repository has no branch '{version}' "
+                    "(it must match the project's Odoo version)"
+                )
+            log(f"enterprise addons {enterprise_sha[:10]} ({version})")
+        else:
+            shutil.rmtree(docker_ctl.enterprise_dir(branch), ignore_errors=True)
+        has_enterprise = bool(enterprise_url)
+
         step("installing requirements")
         code = docker_ctl.ensure_venv(branch, log)
         if code != 0:
@@ -152,6 +170,7 @@ def run_build(build_id: int) -> None:
                 demo=demo,
                 tests=bool(test_tags),
                 test_tags=test_tags,
+                enterprise=has_enterprise,
             )
             log(f"odoo init: {' '.join(command)}")
             code = docker_ctl.run_oneoff(branch, command, log)
@@ -171,13 +190,16 @@ def run_build(build_id: int) -> None:
                     demo=demo,
                     tests=bool(test_tags),
                     test_tags=test_tags,
+                    enterprise=has_enterprise,
                 )
                 log(f"odoo install: {' '.join(command)}")
                 code = docker_ctl.run_oneoff(branch, command, log)
                 if code != 0:
                     raise BuildError(f"module installation failed (exit code {code})")
             elif branch.update_on_deploy:
-                command = docker_ctl.task_command(branch, update=True)
+                command = docker_ctl.task_command(
+                    branch, update=True, enterprise=has_enterprise
+                )
                 log(f"odoo update: {' '.join(command)}")
                 code = docker_ctl.run_oneoff(branch, command, log)
                 if code != 0:
@@ -190,7 +212,9 @@ def run_build(build_id: int) -> None:
 
         step("starting server")
         docker_ctl.ensure_network()
-        docker_ctl.start_server_container(branch, project.odoo_config)
+        docker_ctl.start_server_container(
+            branch, project.odoo_config, enterprise=has_enterprise
+        )
         if not settings.MOCK_DOCKER:
             _wait_http(branch.port, log)
 
