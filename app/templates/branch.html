@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ branch.name }} · {{ project.slug }}{% endblock %}
+{% block head %}
+{% if tab in ('logs', 'shell') %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="/static/js/terminal.js" defer></script>
+{% endif %}
+{% if tab == 'monitor' %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
+<script src="/static/js/monitor.js" defer></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ branch.name }} <span class="pill {{ branch.status }}">{{ branch.status }}</span></h1>
+    <div class="muted small">
+      {{ project.slug }} · stage <strong>{{ branch.stage }}</strong> · Odoo {{ branch.odoo_version }} · port {{ branch.port }} ·
+      container {{ container_state }} ·
+      <a href="http://{{ public_host }}:{{ branch.port }}" target="_blank" rel="noopener">http://{{ public_host }}:{{ branch.port }}</a>
+    </div>
+  </div>
+  <div class="row gap">
+    <form method="post" action="/branches/{{ branch.id }}/deploy"><button class="primary">Deploy</button></form>
+    <form method="post" action="/branches/{{ branch.id }}/restart"><button>Restart</button></form>
+    <form method="post" action="/branches/{{ branch.id }}/stop"><button>Stop</button></form>
+    <form method="post" action="/branches/{{ branch.id }}/start"><button>Start</button></form>
+    <a class="button" href="/projects/{{ project.id }}">← Board</a>
+  </div>
+</div>
+
+<nav class="tabs">
+  {% for name in ['history', 'logs', 'shell', 'backups', 'monitor', 'settings'] %}
+  <a class="{{ 'active' if tab == name else '' }}" href="/branches/{{ branch.id }}?tab={{ name }}">{{ name|capitalize }}</a>
+  {% endfor %}
+</nav>
+
+{% if tab == 'history' %}
+<div class="grid-2">
+  <div class="card">
+    <h3>Builds</h3>
+    <table class="table small">
+      <thead><tr><th>#</th><th>Status</th><th>Step</th><th>Commit</th><th>When</th></tr></thead>
+      <tbody>
+      {% for build in builds %}
+        <tr>
+          <td><a href="/builds/{{ build.id }}">#{{ build.id }}</a></td>
+          <td><span class="pill {{ build.status }}">{{ build.status }}</span></td>
+          <td class="muted">{{ build.step }}</td>
+          <td class="muted">{{ (build.commit_message or '')[:48] }}</td>
+          <td class="muted">{{ build.created_at.strftime('%m-%d %H:%M') }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">No builds yet — press Deploy</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Recent commits</h3>
+    <ul class="events">
+      {% for commit in commits %}
+      <li><code class="small">{{ commit.sha }}</code> {{ commit.subject }}
+          <span class="muted small">— {{ commit.author }}, {{ commit.date }}</span></li>
+      {% else %}
+      <li class="muted">Repository not cloned yet — run a build first</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+<div class="card">
+  <h3>Activity</h3>
+  <ul class="events">
+    {% for event in events %}
+    <li><span class="muted small">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <span class="kind {{ event.kind }}">{{ event.kind }}</span> {{ event.message }}</li>
+    {% else %}
+    <li class="muted">No activity yet</li>
+    {% endfor %}
+  </ul>
+</div>
+
+{% elif tab == 'logs' %}
+<div class="card">
+  <h3>Live logs {% if container_state != 'running' %}<span class="muted small">(container not running — showing latest build log)</span>{% endif %}</h3>
+  <div id="terminal" class="terminal readonly" data-path="/ws/logs/{{ branch.id }}" data-mode="logs"></div>
+</div>
+
+{% elif tab == 'shell' %}
+<div class="card">
+  <h3>Web shell</h3>
+  {% if not can_shell %}
+    <p class="danger-text">Your role ({{ user.role }}) cannot open a {{ branch.stage }} shell. Needed: {{ 'admin' if branch.stage == 'production' else 'tester' }}.</p>
+  {% elif container_state != 'running' %}
+    <p class="muted">Container is not running. Press Start or Deploy first.</p>
+  {% else %}
+    {% if branch.stage == 'production' %}<p class="danger-text">Production shell — changes affect live data. Use transactions for SQL (BEGIN/COMMIT).</p>{% endif %}
+    <p class="muted small">You are inside the branch container. `psql` connects to database <code>{{ branch.db_name }}</code>.</p>
+    <div id="terminal" class="terminal" data-path="/ws/shell/{{ branch.id }}" data-mode="shell"></div>
+  {% endif %}
+</div>
+
+{% elif tab == 'backups' %}
+<div class="card">
+  <div class="row space-between">
+    <h3>Backups</h3>
+    <form method="post" action="/branches/{{ branch.id }}/backups/create"><button class="primary">Create backup</button></form>
+  </div>
+  <p class="muted small">Retention: newest 3 days kept, then 7 daily + 4 weekly + 3 monthly. Files live in the platform data directory.</p>
+  <table class="table small">
+    <thead><tr><th>#</th><th>Kind</th><th>Created</th><th>Size</th><th></th></tr></thead>
+    <tbody>
+    {% for backup in backups %}
+      <tr>
+        <td>#{{ backup.id }}</td>
+        <td>{{ backup.kind }}</td>
+        <td class="muted">{{ backup.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="muted">{{ (backup.size_bytes // 1024) }} KB</td>
+        <td class="row gap">
+          <a class="small-btn" href="/backups/{{ backup.id }}/download">Download</a>
+          {% if user.role == 'admin' %}
+          <form method="post" action="/backups/{{ backup.id }}/restore"
+                onsubmit="return confirm('Restore backup #{{ backup.id }} into {{ branch.name }}? The current database will be replaced.')">
+            <input type="hidden" name="confirm" value="restore">
+            <button class="small-btn">Restore</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/backups/{{ backup.id }}/delete"
+                onsubmit="return confirm('Delete backup #{{ backup.id }}?')">
+            <button class="small-btn danger-btn">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No backups yet</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% elif tab == 'monitor' %}
+{% include "partials/monitor.html" %}
+
+{% elif tab == 'settings' %}
+<div class="card">
+  <h3>Stage</h3>
+  <p class="muted small">Only the database name is stage-independent; moving stages does not move data.</p>
+  <form method="post" action="/branches/{{ branch.id }}/stage" class="row gap">
+    <select name="stage" style="max-width: 220px">
+      {% for stage in ['production', 'staging', 'development'] %}
+      <option value="{{ stage }}" {{ 'selected' if branch.stage == stage else '' }}>{{ stage }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Move</button>
+  </form>
+</div>
+<div class="card">
+  <h3>Branch settings</h3>
+  <form method="post" action="/branches/{{ branch.id }}/settings" class="stack">
+    <label>Modules to install on a new database (comma-separated, empty = base)
+      <input name="install_modules" value="{{ branch.install_modules }}" placeholder="base,sale_management">
+    </label>
+    <label class="row gap"><input type="checkbox" name="update_on_deploy" {{ 'checked' if branch.update_on_deploy else '' }}>
+      Update modules on every deploy (-u all)</label>
+    <label class="row gap"><input type="checkbox" name="tests_enabled" {{ 'checked' if branch.tests_enabled else '' }}>
+      Run unit tests on development builds</label>
+    <button class="primary" type="submit">Save</button>
+  </form>
+</div>
+{% if user.role == 'admin' %}
+<details class="card danger">
+  <summary><strong>Delete branch</strong></summary>
+  <p class="small">Stops and removes the container, drops database <code>{{ branch.db_name }}</code>, deletes files and backup records.</p>
+  <form method="post" action="/branches/{{ branch.id }}/delete" class="stack">
+    <label>Type <code>{{ branch.name }}</code> to confirm
+      <input name="confirm" required>
+    </label>
+    <button class="danger-btn" type="submit">Delete branch</button>
+  </form>
+</details>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block head_scripts %}{% endblock %}

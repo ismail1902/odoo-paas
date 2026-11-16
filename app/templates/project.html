@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ project.slug }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ project.display_name }} <span class="muted small">{{ project.slug }}</span></h1>
+    <div class="muted small">
+      {% if project.repo_url %}{{ project.repo_url }}
+      {% else %}<span class="muted">No repository configured &mdash; <a href="/projects/{{ project.id }}/settings">add one in project settings</a></span>{% endif %}
+      · Odoo {{ project.odoo_version or 'default' }}
+    </div>
+  </div>
+  <div class="row gap">
+    <a class="button" href="/projects/{{ project.id }}/settings" title="Project settings" aria-label="Project settings">
+      <span aria-hidden="true">&#9881;</span> Settings
+    </a>
+    <a class="button" href="/">← All projects</a>
+  </div>
+</div>
+
+<div class="board">
+  {% for stage in stages %}
+  <section class="column {{ stage }}">
+    <h2>{{ stage|capitalize }}</h2>
+    {% for item in grouped[stage] %}
+    {% set branch = item.branch %}
+    {% set latest = item.latest %}
+    <article class="branch-card">
+      <div class="row space-between">
+        <a class="branch-name" href="/branches/{{ branch.id }}">{{ branch.name }}</a>
+        <span class="pill {{ branch.status }}">{{ branch.status }}</span>
+      </div>
+      <div class="small muted">
+        port {{ branch.port }} ·
+        <a href="http://{{ public_host }}:{{ branch.port }}" target="_blank" rel="noopener">open</a>
+      </div>
+      {% if latest %}
+      <div class="small muted">build #{{ latest.id }} · {{ latest.status }} · {{ latest.step }}</div>
+      {% endif %}
+      <div class="row gap">
+        <form method="post" action="/branches/{{ branch.id }}/deploy"><button class="small-btn primary">Deploy</button></form>
+        <a class="small-btn" href="/branches/{{ branch.id }}">Details</a>
+      </div>
+    </article>
+    {% else %}
+    <p class="muted small">No branches</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+
+<div class="grid-2">
+  <details class="card">
+    <summary><strong>New branch</strong></summary>
+    <form method="post" action="/projects/{{ project.id }}/branches" class="stack">
+      <label>Git branch name
+        <input name="name" placeholder="main" required>
+      </label>
+      <label>Stage
+        <select name="stage">
+          <option value="development">development</option>
+          <option value="staging">staging</option>
+          <option value="production">production</option>
+        </select>
+      </label>
+      <button class="primary" type="submit">Create branch + build</button>
+    </form>
+  </details>
+
+  <div class="card">
+    <h3>GitHub webhook</h3>
+    <p class="small muted">Add this in GitHub → Settings → Webhooks (content type: application/json). Secret:</p>
+    <code class="block">{{ project.webhook_secret }}</code>
+    <code class="block">{{ webhook_url }}</code>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Activity</h3>
+  <ul class="events">
+    {% for event in events %}
+    <li><span class="muted small">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <span class="kind {{ event.kind }}">{{ event.kind }}</span> {{ event.message }}</li>
+    {% else %}
+    <li class="muted">No activity yet</li>
+    {% endfor %}
+  </ul>
+</div>
+
+{% if user.role == 'admin' %}
+<details class="card danger">
+  <summary><strong>Delete project</strong></summary>
+  <p class="small">Stops containers and deletes platform records. Databases stay on the PostgreSQL server.</p>
+  <form method="post" action="/projects/{{ project.id }}/delete" class="stack">
+    <label>Type <code>{{ project.slug }}</code> to confirm
+      <input name="confirm" required>
+    </label>
+    <button class="danger-btn" type="submit">Delete project</button>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

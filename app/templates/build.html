@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Build #{{ build.id }} · {{ branch.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Build #{{ build.id }}</h1>
+    <div class="muted small">
+      {{ project.slug }} / {{ branch.name }} · created {{ build.created_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if build.commit_sha %}· commit <code>{{ build.commit_sha[:10] }}</code>{% endif %}
+      {% if build.commit_author %}by {{ build.commit_author }}{% endif %}
+    </div>
+  </div>
+  <div class="row gap">
+    <form method="post" action="/branches/{{ branch.id }}/deploy"><button class="primary">Deploy again</button></form>
+    <a class="button" href="/branches/{{ branch.id }}">Branch</a>
+  </div>
+</div>
+
+<div id="build-live" class="card"
+     {% if build.status in ('queued', 'running') %}hx-get="/partials/build/{{ build.id }}" hx-trigger="every 2s" hx-swap="innerHTML"{% endif %}>
+  {% include "partials/build_status.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% set c = stats.container %}
+<div class="monitor" data-branch-id="{{ branch.id }}"
+     data-disk-used="{{ stats.host.disk_used }}"
+     data-disk-total="{{ stats.host.disk_total }}"
+     data-disk-percent="{{ stats.host.disk_percent }}">
+  <div class="monitor-head">
+    <div class="row gap">
+      <span class="live-dot" aria-hidden="true"></span>
+      <strong>Live monitoring</strong>
+      <span class="muted small" id="monitor-updated">waiting for first sample…</span>
+    </div>
+    <button type="button" class="small-btn" id="monitor-toggle">Pause</button>
+  </div>
+
+  <div class="monitor-kpis">
+    <div class="kpi">
+      <div class="kpi-label">Container</div>
+      <div class="kpi-value state-{{ stats.state }}" id="kpi-state">{{ stats.state }}</div>
+      <div class="kpi-sub" id="kpi-state-sub">{{ (c.pids ~ ' processes') if c else 'container not running' }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Container CPU</div>
+      <div class="kpi-value" id="kpi-container-cpu">{{ ('%.1f'|format(c.cpu_percent) ~ '%') if c else '—' }}</div>
+      <div class="kpi-sub" id="kpi-container-cpu-sub">docker stats</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Container RAM</div>
+      <div class="kpi-value" id="kpi-container-ram">{{ (((c.mem_used / 1048576)|round(0)|int) ~ ' MB') if c else '—' }}</div>
+      <div class="kpi-sub" id="kpi-container-ram-sub">
+        {{ (('%.1f'|format(c.mem_used / stats.host.mem_total * 100) ~ '% of host RAM') if stats.host.mem_total else '—') if c else '—' }}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Host CPU</div>
+      <div class="kpi-value" id="kpi-host-cpu">{{ '%.1f'|format(stats.host.cpu_percent) }}%</div>
+      <div class="kpi-sub" id="kpi-host-cpu-sub">{{ stats.host.cpu_count }} vCPU · load {{ stats.host.load_1 }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Host RAM</div>
+      <div class="kpi-value" id="kpi-host-ram">{{ '%.1f'|format(stats.host.mem_percent) }}%</div>
+      <div class="kpi-sub" id="kpi-host-ram-sub">
+        {{ ((stats.host.mem_used / 1073741824)|round(1)) }} / {{ ((stats.host.mem_total / 1073741824)|round(1)) }} GB
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Disk (data dir)</div>
+      <div class="kpi-value" id="kpi-disk">{{ '%.1f'|format(stats.host.disk_percent) }}%</div>
+      <div class="kpi-sub" id="kpi-disk-sub">
+        {{ (((stats.host.disk_total - stats.host.disk_used) / 1073741824)|round(0)|int) }} GB free
+      </div>
+    </div>
+  </div>
+
+  <div class="monitor-grid">
+    <div class="card chart-card">
+      <div class="chart-head"><h3>CPU</h3><span class="muted small">container vs host</span></div>
+      <div class="chart-wrap"><canvas id="chart-cpu"></canvas></div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head"><h3>Memory</h3><span class="muted small">container MB vs host %</span></div>
+      <div class="chart-wrap"><canvas id="chart-memory"></canvas></div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head"><h3>Network I/O</h3><span class="muted small">received / sent</span></div>
+      <div class="chart-wrap"><canvas id="chart-network"></canvas></div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head"><h3>Disk I/O</h3><span class="muted small">read / write</span></div>
+      <div class="chart-wrap"><canvas id="chart-diskio"></canvas></div>
+    </div>
+  </div>
+
+  <div class="monitor-grid monitor-bottom">
+    <div class="card chart-card">
+      <div class="chart-head"><h3>Disk usage</h3><span class="muted small">data directory</span></div>
+      <div class="disk-gauge-wrap">
+        <canvas id="chart-disk"></canvas>
+        <div class="disk-center">
+          <strong id="disk-center-value">{{ '%.0f'|format(stats.host.disk_percent) }}%</strong>
+          <span class="muted small">used</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="chart-head"><h3>Insights</h3><span class="muted small" id="monitor-insight-state">waiting</span></div>
+      <ul class="insights" id="monitor-insights">
+        <li>Collecting samples…</li>
+      </ul>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,22 @@
+[Unit]
+Description=Odoo PaaS control plane (FastAPI + build worker)
+Documentation=file:/opt/odoo-paas/docs/ARCHITECTURE.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/odoo-paas
+EnvironmentFile=/opt/odoo-paas/.env
+# Root is required: the worker talks to /var/run/docker.sock, writes host
+# directories under DATA_DIR and runs `docker exec` against the shared
+# PostgreSQL container.
+User=root
+ExecStart=/opt/odoo-paas/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+<div class="row space-between">
+  <div>
+    <strong>{{ build.step }}</strong>
+    <div class="muted small">
+      {% if build.finished_at %}finished {{ build.finished_at.strftime('%H:%M:%S') }}
+      {% elif build.started_at %}started {{ build.started_at.strftime('%H:%M:%S') }}{% endif %}
+      {% if build.commit_message %} · {{ build.commit_message[:100] }}{% endif %}
+    </div>
+  </div>
+  <span class="pill {{ build.status }}">{{ build.status }}</span>
+</div>
+<pre class="log">{{ log_tail }}</pre>

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ project.slug }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Project settings</h1>
+    <div class="muted small">
+      {{ project.display_name }} · {{ project.slug }} · Odoo {{ project.odoo_version or 'default' }}
+    </div>
+  </div>
+  <a class="button" href="/projects/{{ project.id }}">← Back to project</a>
+</div>
+
+<form method="post" action="/projects/{{ project.id }}/settings" class="stack">
+  <div class="card">
+    <h3>Repository</h3>
+    <label>Display name
+      <input name="display_name" value="{{ project.display_name }}">
+    </label>
+    <label>Git repository URL (https, optional)
+      <input name="repo_url" value="{{ project.repo_url }}" placeholder="Leave empty to deploy base Odoo only">
+    </label>
+    <p class="muted small">
+      Changes apply on the next Deploy. Clearing the URL removes the checkout; if the database
+      has custom modules installed, keep or restore the repository before deploying.
+    </p>
+    <div class="settings-help">
+      <h4>Private repositories</h4>
+      {% include "partials/private_repo_help.html" %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row space-between">
+      <h3>Odoo configuration</h3>
+      <span class="muted small">Applies to all branches on Deploy or Start</span>
+    </div>
+    <p class="muted small">
+      Enable an option to pass it to the Odoo server. Disabled options use Odoo's default
+      or the platform default noted in the help text.
+    </p>
+    {% for group in config_groups %}
+    <details class="config-group">
+      <summary><strong>{{ group.title }}</strong></summary>
+      <div class="config-options">
+        {% for option in group.options %}
+        {% set enabled = option.key in config %}
+        <div class="config-option">
+          <label class="row gap">
+            <input type="checkbox" name="enabled_{{ option.key }}" {{ 'checked' if enabled else '' }}>
+            <strong>{{ option.label }}</strong>
+          </label>
+          {% if option.type == 'flag' %}
+          {% elif option.type == 'select' %}
+          <select name="value_{{ option.key }}">
+            {% if option.default is not defined %}<option value="">— select —</option>{% endif %}
+            {% for choice in option.choices %}
+            <option value="{{ choice }}" {{ 'selected' if config.get(option.key, option.default) == choice else '' }}>{{ choice }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input name="value_{{ option.key }}"
+                 type="{{ 'password' if option.type == 'password' else ('number' if option.type in ('int', 'float') else 'text') }}"
+                 value="{{ config.get(option.key, '') }}"
+                 placeholder="{{ option.placeholder or '' }}"
+                 {% if option.type == 'int' %}step="1"{% elif option.type == 'float' %}step="any"{% endif %}
+                 {% if option.min is defined %}min="{{ option.min }}"{% endif %}
+                 {% if option.max is defined %}max="{{ option.max }}"{% endif %}>
+          {% endif %}
+          <div class="muted small">{{ option.help }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+
+    <details class="config-group">
+      <summary><strong>Advanced</strong></summary>
+      <label>Additional Odoo CLI options
+        <textarea name="extra" rows="4" placeholder="--limit-time-real 300 --log-db odoo">{{ config.get('extra', '') }}</textarea>
+      </label>
+      <p class="muted small">
+        Any server option supported by Odoo {{ project.odoo_version or 'default' }}. Platform-managed
+        options (HTTP port/interface, database, addons, data dir, init/update, tests) are rejected.
+        Use quotes for values with spaces.
+      </p>
+    </details>
+  </div>
+
+  <div class="row gap">
+    <button class="primary" type="submit">Save settings</button>
+    <a class="button" href="/projects/{{ project.id }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

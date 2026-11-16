@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="login-card">
+  <h1>{{ app_name }}</h1>
+  <p class="muted">Self-hosted Odoo.sh-style platform</p>
+  <form method="post" action="/login">
+    <label>Email
+      <input type="email" name="email" required autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" required>
+    </label>
+    <button class="primary" type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+<p class="muted small">
+  The platform clones over HTTPS without prompting, so a private repository
+  needs a <strong>read-only token embedded in the URL</strong>.
+</p>
+<ol class="small help-list">
+  <li>
+    Create a token with read-only repository access:
+    <ul>
+      <li><a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">GitHub</a>:
+        fine-grained token, <em>Contents: Read-only</em></li>
+      <li><a href="https://gitlab.com/-/user_settings/personal_access_tokens" target="_blank" rel="noopener">GitLab</a>:
+        token with <code>read_repository</code>, or a deploy token</li>
+      <li><a href="https://bitbucket.org/account/settings/app-passwords/" target="_blank" rel="noopener">Bitbucket</a>:
+        app password with <em>Repositories: Read</em></li>
+    </ul>
+  </li>
+  <li>
+    Put it in the project's Git URL, for example:
+    <code class="block">https://&lt;username&gt;:&lt;token&gt;@github.com/&lt;owner&gt;/&lt;repo&gt;.git</code>
+    <code class="block">https://oauth2:&lt;token&gt;@gitlab.com/&lt;group&gt;/&lt;repo&gt;.git</code>
+    <code class="block">https://&lt;username&gt;:&lt;app-password&gt;@bitbucket.org/&lt;workspace&gt;/&lt;repo&gt;.git</code>
+  </li>
+  <li>
+    Use a dedicated, least-privilege token with an expiry. The URL (including
+    the token) is stored in the platform database and shown on the project
+    page to every signed-in user &mdash; rotate it if it leaks.
+  </li>
+</ol>

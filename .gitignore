@@ -1,0 +1,13 @@
+.venv/
+var/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+# local credentials / private keys
+oracle
+*.pem
+*.key
+id_rsa
+id_ed25519
