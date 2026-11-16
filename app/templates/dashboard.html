@@ -1,10 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · {{ app_name }}{% endblock %}
+{% block head %}
+<script src="/static/js/dashboard.js" defer></script>
+{% endblock %}
 {% block content %}
 <section class="hero">
-  <span class="eyebrow">Control plane</span>
-  <h1>Your Odoo fleet, at a glance.</h1>
-  <p>Projects, branches and live instances on this server.</p>
+  <div class="hero-top">
+    <div>
+      <span class="eyebrow">Control plane</span>
+      <h1>Your Odoo fleet, at a glance.</h1>
+      <p>Projects, branches and live instances on this server.</p>
+    </div>
+    <div class="hero-actions">
+      <button type="button" class="primary" data-open-new-project>+ New project</button>
+    </div>
+  </div>
   <div class="hero-stats">
     <div class="stat">
       <span class="stat-value">{{ totals.projects }}</span>
@@ -63,39 +73,10 @@
     {% else %}
     <div class="empty-state">
       <strong>No projects yet</strong>
-      <div class="small">Open <em>New project</em> below to connect your first repository.</div>
+      <div class="small">Create your first project to connect a repository or start with base Odoo.</div>
+      <button type="button" class="primary" data-open-new-project>+ New project</button>
     </div>
     {% endif %}
-
-    <details class="card new-project">
-      <summary><span class="plus" aria-hidden="true">+</span>New project</summary>
-      <form method="post" action="/projects" class="stack">
-        <label>Name (slug)
-          <input name="slug" placeholder="my-odoo" pattern="[A-Za-z0-9 _-]+" required>
-        </label>
-        <label>Display name
-          <input name="display_name" placeholder="My Odoo">
-        </label>
-        <label>Git repository URL (https, optional)
-          <input name="repo_url" placeholder="Leave empty to add later">
-        </label>
-        <p class="muted small">Leave empty to deploy base Odoo now; add the repository later in Project settings.</p>
-        <details class="repo-help">
-          <summary class="small"><strong>Using a private repository?</strong></summary>
-          {% include "partials/private_repo_help.html" %}
-        </details>
-        <label>Odoo version
-          <select name="odoo_version">
-            {% for version in odoo_versions %}
-            <option value="{{ version }}" {{ 'selected' if version == default_odoo_version else '' }}>Odoo {{ version }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <p class="muted small">Only versions with a built base image are listed. Build more with
-          <code>sudo ./install.sh --odoo-versions "17.0 18.0 19.0 20.0"</code>.</p>
-        <button class="primary" type="submit">Create project</button>
-      </form>
-    </details>
   </section>
 
   <aside class="card activity-panel">
@@ -118,4 +99,45 @@
     </ul>
   </aside>
 </div>
+
+<dialog class="modal" id="new-project-dialog" aria-labelledby="new-project-title">
+  <form method="post" action="/projects" class="modal-form">
+    <div class="modal-head">
+      <div>
+        <h2 id="new-project-title">New project</h2>
+        <p class="muted small">Connect a repository or start with base Odoo.</p>
+      </div>
+      <button type="button" class="modal-close" data-close-new-project aria-label="Close">&times;</button>
+    </div>
+    <div class="stack">
+      <label>Name (slug)
+        <input name="slug" placeholder="my-odoo" pattern="[A-Za-z0-9 _-]+" required>
+      </label>
+      <label>Display name
+        <input name="display_name" placeholder="My Odoo">
+      </label>
+      <label>Git repository URL (https, optional)
+        <input name="repo_url" placeholder="Leave empty to add later">
+      </label>
+      <p class="muted small">Leave empty to deploy base Odoo now; add the repository later in Project settings.</p>
+      <details class="repo-help">
+        <summary class="small"><strong>Using a private repository?</strong></summary>
+        {% include "partials/private_repo_help.html" %}
+      </details>
+      <label>Odoo version
+        <select name="odoo_version">
+          {% for version in odoo_versions %}
+          <option value="{{ version }}" {{ 'selected' if version == default_odoo_version else '' }}>Odoo {{ version }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="muted small">Only versions with a built base image are listed. Build more with
+        <code>sudo ./install.sh --odoo-versions "17.0 18.0 19.0 20.0"</code>.</p>
+    </div>
+    <div class="row gap modal-actions">
+      <button class="primary" type="submit">Create project</button>
+      <button type="button" class="button" data-close-new-project>Cancel</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}

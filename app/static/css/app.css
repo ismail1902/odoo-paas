@@ -102,6 +102,16 @@ h3 { margin: 0 0 10px; }
   mask-image: linear-gradient(to bottom, #000, transparent 88%);
 }
 .hero > * { position: relative; z-index: 1; }
+.hero-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 20px;
+}
+.hero-actions { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 700px) {
+  .hero-top { flex-direction: column; }
+  .hero-actions { width: 100%; }
+  .hero-actions .button { width: 100%; text-align: center; }
+}
 .eyebrow {
   display: inline-block; color: var(--accent-2); font-size: 11px;
   text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700;
@@ -179,18 +189,35 @@ h3 { margin: 0 0 10px; }
   padding: 34px 20px; text-align: center; color: var(--muted);
   background: linear-gradient(160deg, var(--panel-2), var(--panel));
 }
-.new-project {
-  border-style: dashed; background: transparent; margin-top: 16px;
+.empty-state .button { margin-top: 12px; }
+
+/* new-project modal */
+.modal {
+  width: min(560px, 92vw); max-height: 90vh; overflow: auto;
+  padding: 0; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel); color: var(--text);
+  box-shadow: var(--shadow);
 }
-.new-project summary { cursor: pointer; color: var(--muted); }
-.new-project summary:hover { color: var(--text); }
-.new-project[open] summary { color: var(--text); margin-bottom: 14px; }
-.new-project .plus {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; margin-right: 6px; border-radius: 50%;
-  background: var(--panel-2); border: 1px solid var(--border);
-  color: var(--accent-2); font-weight: 700;
+.modal::backdrop {
+  background: rgba(6, 10, 16, 0.66);
+  backdrop-filter: blur(3px);
 }
+[data-theme="light"] .modal::backdrop { background: rgba(20, 32, 43, 0.35); }
+.modal-form { padding: 20px 22px 22px; }
+.modal-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 14px;
+}
+.modal-head h2 {
+  margin: 0; font-size: 20px; text-transform: none;
+  letter-spacing: 0; color: var(--text);
+}
+.modal-close {
+  padding: 2px 9px; font-size: 18px; line-height: 1.1;
+  border-radius: 999px; background: var(--panel-2); color: var(--muted);
+}
+.modal-close:hover { color: var(--text); }
+.modal-actions { margin-top: 14px; }
 .activity-panel {
   position: sticky; top: 74px;
   max-height: calc(100vh - 96px); overflow: auto;
