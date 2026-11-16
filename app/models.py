@@ -85,6 +85,7 @@ class Build(SQLModel, table=True):
     branch_id: int = Field(index=True, foreign_key="branch.id")
     status: str = BUILD_QUEUED  # see BUILD_* constants
     step: str = "queued"
+    rebuild_base: bool = False
     commit_sha: Optional[str] = None
     commit_message: str = ""
     commit_author: str = ""

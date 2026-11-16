@@ -73,6 +73,7 @@ class Settings:
         self.MAILPIT_PORT = _int("MAILPIT_PORT", 8025)
         self.BASE_IMAGE = os.environ.get("BASE_IMAGE", "odoo-paas/base:17.0")
         self.ODOO_VERSION = os.environ.get("ODOO_VERSION", "17.0")
+        self.WKHTMLTOPDF_DEB = os.environ.get("WKHTMLTOPDF_DEB", "")
         # Versions offered in mock mode / when no images are built yet.
         self.ODOO_VERSIONS = [
             v.strip()

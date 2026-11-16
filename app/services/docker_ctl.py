@@ -140,6 +140,50 @@ def list_base_versions() -> list:
         return [settings.ODOO_VERSION]
 
 
+def build_base_image(version: str, log: Callable[[str], None]) -> None:
+    """Rebuild odoo-paas/base:<version> from the latest Odoo source."""
+    tag = image_name(version)
+    if settings.MOCK_DOCKER:
+        log(f"[mock] docker build -t {tag} (Odoo {version})")
+        return
+    major = _version_key(version)[0]
+    base_os = "python:3.12-slim-bookworm" if major >= 20 else "debian:bookworm-slim"
+    context = settings.APP_DIR / "docker" / "odoo-base"
+    log(f"building {tag} from {base_os}")
+    c = client()
+    try:
+        _image, stream = c.images.build(
+            path=str(context),
+            tag=tag,
+            buildargs={
+                "BASE_IMAGE": base_os,
+                "ODOO_VERSION": version,
+                "WKHTMLTOPDF_DEB": settings.WKHTMLTOPDF_DEB,
+            },
+            rm=True,
+            forcerm=True,
+        )
+        for chunk in stream:
+            text = chunk.get("stream")
+            if text:
+                for line in text.splitlines():
+                    if line.strip():
+                        log(line.rstrip())
+            error = chunk.get("error")
+            if error:
+                raise BuildError(f"docker build failed: {error.strip()}")
+    except BuildError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surfaced as a BuildError
+        build_log = getattr(exc, "build_log", None) or []
+        for item in build_log[-20:]:
+            line = item.get("stream") if isinstance(item, dict) else str(item)
+            if line:
+                log(line.rstrip())
+        raise BuildError(f"docker build failed: {exc}")
+    log(f"image {tag} rebuilt")
+
+
 def _make_container_writable(path: Path) -> None:
     """Let the container user (uid 1000 'odoo') write to a host directory."""
     try:

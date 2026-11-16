@@ -47,6 +47,10 @@ PostgreSQL volume, files under `DATA_DIR`.
 ## Build pipeline (`app/services/builder.py`)
 
 1. **queued → claimed** by the single worker thread (`worker.py`), 2 s poll.
+1b. **base image update (optional)** — when the build was queued with
+    `rebuild_base`, `docker_ctl.build_base_image` rebuilds the shared
+    `odoo-paas/base:<version>` image from the latest Odoo source before the
+    normal steps.
 2. **cloning** — `git clone --branch <branch> --single-branch` or
    `git fetch origin <sha> && checkout --force <sha>` into
    `builds/branch-N/repo` (`gitops.sync`). Commit metadata is stored on the

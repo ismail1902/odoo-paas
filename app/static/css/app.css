@@ -75,7 +75,8 @@ h3 { margin: 0 0 10px; }
 }
 
 .container { max-width: 1150px; margin: 0 auto; padding: 22px; }
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 18px; }
+.page-head .row.gap { flex-wrap: wrap; }
 .row { display: flex; align-items: center; }
 .row.gap { gap: 8px; }
 .space-between { justify-content: space-between; }

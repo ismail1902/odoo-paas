@@ -24,6 +24,10 @@
   </div>
   <div class="row gap">
     <form method="post" action="/branches/{{ branch.id }}/deploy"><button class="primary">Deploy</button></form>
+    <form method="post" action="/branches/{{ branch.id }}/deploy">
+      <input type="hidden" name="rebuild_base" value="1">
+      <button title="Rebuild the Odoo {{ branch.odoo_version }} base image from the latest source, run -u all, then deploy this branch">Update Odoo + Deploy</button>
+    </form>
     <form method="post" action="/branches/{{ branch.id }}/restart"><button>Restart</button></form>
     <form method="post" action="/branches/{{ branch.id }}/stop"><button>Stop</button></form>
     <form method="post" action="/branches/{{ branch.id }}/start"><button>Start</button></form>

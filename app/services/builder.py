@@ -85,6 +85,14 @@ def run_build(build_id: int) -> None:
         if not docker_ctl.available():
             raise BuildError("Docker is not available on this host")
         version = branch.odoo_version or settings.ODOO_VERSION
+        if build.rebuild_base:
+            step("updating Odoo base image")
+            log(
+                f"pulling latest Odoo {version} source and rebuilding "
+                f"{docker_ctl.image_name(version)} (this can take several minutes)"
+            )
+            docker_ctl.build_base_image(version, log)
+            log(f"Odoo {version} base image updated")
         if not docker_ctl.image_exists(version):
             raise BuildError(
                 f"Base image for Odoo {version} is not built on this host "
@@ -196,7 +204,15 @@ def run_build(build_id: int) -> None:
                 code = docker_ctl.run_oneoff(branch, command, log)
                 if code != 0:
                     raise BuildError(f"module installation failed (exit code {code})")
-            elif branch.update_on_deploy:
+                if build.rebuild_base:
+                    command = docker_ctl.task_command(
+                        branch, update=True, enterprise=has_enterprise
+                    )
+                    log(f"odoo update after base image change: {' '.join(command)}")
+                    code = docker_ctl.run_oneoff(branch, command, log)
+                    if code != 0:
+                        raise BuildError(f"module update failed (exit code {code})")
+            elif branch.update_on_deploy or build.rebuild_base:
                 command = docker_ctl.task_command(
                     branch, update=True, enterprise=has_enterprise
                 )

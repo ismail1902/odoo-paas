@@ -37,7 +37,9 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    `docker_ctl.list_base_versions()`.
 5. **Builds run one at a time** in a single worker thread
    (`app/worker.py`). Don't introduce parallel builds without redesigning
-   state transitions (queued → running → succeeded/failed).
+   state transitions (queued → running → succeeded/failed). Base-image
+   rebuilds use the same queue via `Build.rebuild_base` and
+   `docker_ctl.build_base_image`, so they are serialized too.
 6. **Databases are derived from names**: `paas_<project.slug>_<branch>` via
    `web._db_name()`. Don't rename a branch's DB independently or history is
    lost. A database belongs to exactly one Odoo series — never point two

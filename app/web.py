@@ -511,14 +511,26 @@ def move_stage(
 
 
 @router.post("/branches/{branch_id}/deploy")
-def deploy_branch(branch_id: int, request: Request, session: Session = Depends(get_session)):
+def deploy_branch(
+    branch_id: int,
+    request: Request,
+    rebuild_base: str = Form(""),
+    session: Session = Depends(get_session),
+):
     user, redirect = _page_user(request, session)
     if redirect:
         return redirect
     branch = session.get(Branch, branch_id)
     if branch is None:
         return _back("/", "Branch not found")
-    build = Build(branch_id=branch_id, status=BUILD_QUEUED, step="queued", commit_message="manual deploy")
+    rebuild = rebuild_base == "1"
+    build = Build(
+        branch_id=branch_id,
+        status=BUILD_QUEUED,
+        step="queued",
+        rebuild_base=rebuild,
+        commit_message="manual deploy + Odoo update" if rebuild else "manual deploy",
+    )
     session.add(build)
     branch.status = "building"
     session.add(branch)

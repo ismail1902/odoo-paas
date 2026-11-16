@@ -80,6 +80,14 @@ def _migrate() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE project ADD COLUMN enterprise_repo_url VARCHAR DEFAULT ''"
             )
+        build_columns = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(build)").fetchall()
+        }
+        if "rebuild_base" not in build_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE build ADD COLUMN rebuild_base BOOLEAN DEFAULT 0"
+            )
 
 
 @contextmanager

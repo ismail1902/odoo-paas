@@ -167,6 +167,11 @@ sudo ./install.sh --rebuild-base --odoo-versions "17.0 20.0"
 # then redeploy branches (Deploy button) to pick up the new image
 ```
 
+Or from the UI: open a branch → **Update Odoo + Deploy**. This rebuilds the
+base image for that branch's Odoo version from the latest source, runs
+`-u all` when the database already exists, and deploys the branch in one
+build (the single worker serializes it with other builds).
+
 Base images are per Odoo version (`odoo-paas/base:17.0`, `…:20.0`, …);
 projects choose one at creation. Existing projects keep their version —
 create a new project (or branch roster) to move to another series.

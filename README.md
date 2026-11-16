@@ -25,6 +25,10 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
 - **Optional Enterprise addons.** Add an Enterprise addons repository URL
   per project; it is cloned at the matching Odoo version branch and added
   to the Odoo addons path.
+- **Update Odoo core.** *Update Odoo + Deploy* rebuilds
+  `odoo-paas/base:<version>` from the latest Odoo source for the selected
+  version, runs `-u all` when the database exists, and redeploys the branch
+  in one serialized build.
 - **Push-to-deploy.** GitHub webhooks (HMAC-verified) trigger builds; a manual
   *Deploy* button does the same.
 - **Works before your first push.** An empty repository (or a branch that is
