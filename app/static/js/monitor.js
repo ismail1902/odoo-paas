@@ -12,21 +12,25 @@
     return;
   }
 
+  var style = getComputedStyle(document.documentElement);
+  function cssVar(name, fallback) {
+    var value = style.getPropertyValue(name).trim();
+    return value || fallback;
+  }
   var COLORS = {
-    accent: "rgba(160, 110, 146, 1)",
+    accent: cssVar("--accent-2", "#a06e92"),
     accentSoft: "rgba(160, 110, 146, 0.16)",
-    blue: "rgba(158, 193, 224, 1)",
-    blueSoft: "rgba(158, 193, 224, 0.12)",
-    green: "rgba(46, 204, 113, 1)",
+    blue: cssVar("--chart-blue", "#9ec1e0"),
+    blueSoft: cssVar("--chart-blue-soft", "rgba(158, 193, 224, 0.12)"),
+    green: cssVar("--ok", "#2ecc71"),
     greenSoft: "rgba(46, 204, 113, 0.12)",
-    red: "rgba(231, 76, 60, 1)",
+    red: cssVar("--err", "#e74c3c"),
     redSoft: "rgba(231, 76, 60, 0.12)",
-    yellow: "rgba(241, 196, 15, 1)",
-    muted: "#7d93a8",
-    grid: "rgba(42, 58, 76, 0.55)",
-    panel: "#17222e",
-    border: "#2a3a4c",
-    text: "#dce7f1",
+    yellow: cssVar("--chart-yellow", "#f1c40f"),
+    muted: cssVar("--muted", "#7d93a8"),
+    grid: cssVar("--chart-grid", "rgba(42, 58, 76, 0.55)"),
+    border: cssVar("--border", "#2a3a4c"),
+    text: cssVar("--text", "#dce7f1"),
   };
 
   var MAX_POINTS = 90;
@@ -73,7 +77,9 @@
   }
 
   function fmtRate(value) {
-    return fmtBytes(value) + "/s";
+    var n = num(value);
+    if (n < 10) return n.toFixed(1) + " B/s";
+    return fmtBytes(n) + "/s";
   }
 
   function timeLabel(ms) {
@@ -202,12 +208,12 @@
         yAxisID: "y1",
       }),
     ],
-    "Container MB",
+    "Container memory",
     "Host %"
   );
   if (memoryChart) {
     memoryChart.options.scales.y.ticks.callback = function (value) {
-      return Math.round(value) + " MB";
+      return fmtBytes(value * 1048576);
     };
     memoryChart.options.scales.y1.ticks.callback = function (value) {
       return value + "%";
@@ -219,7 +225,7 @@
           ": " +
           (ctx.dataset.yAxisID === "y1"
             ? fmtPct(ctx.parsed.y)
-            : Math.round(num(ctx.parsed.y)) + " MB")
+            : fmtBytes(num(ctx.parsed.y) * 1048576))
         );
       },
     };

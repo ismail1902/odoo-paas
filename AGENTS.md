@@ -63,7 +63,7 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/services/backups.py` | dump/restore/retention (3d + 7/4/3 buckets) |
 | `app/services/monitor.py` | psutil host stats + container stats |
 | `app/templates/` | base/login/dashboard/project/branch/build + `partials/` (htmx) |
-| `app/static/` | `css/app.css`, `js/terminal.js` (xterm.js), `js/monitor.js` (Chart.js polling) |
+| `app/static/` | `css/app.css`, `js/theme.js`, `js/terminal.js` (xterm.js), `js/monitor.js` (Chart.js polling) |
 | `docker/odoo-base/Dockerfile` | shared Odoo image; system-wide Odoo requirements |
 | `install.sh` | idempotent server installer (keep it idempotent!) |
 | `systemd/odoo-paas.service` | production unit, runs as root, `${PORT}` from `.env` |

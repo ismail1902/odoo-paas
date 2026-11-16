@@ -1,60 +1,121 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · {{ app_name }}{% endblock %}
 {% block content %}
-<h1>Projects</h1>
+<section class="hero">
+  <span class="eyebrow">Control plane</span>
+  <h1>Your Odoo fleet, at a glance.</h1>
+  <p>Projects, branches and live instances on this server.</p>
+  <div class="hero-stats">
+    <div class="stat">
+      <span class="stat-value">{{ totals.projects }}</span>
+      <span class="stat-label">Projects</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ totals.branches }}</span>
+      <span class="stat-label">Branches</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ totals.running }}</span>
+      <span class="stat-label">Running</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">{{ odoo_versions|length }}</span>
+      <span class="stat-label">Odoo versions</span>
+    </div>
+  </div>
+</section>
 
-{% if rows %}
-<table class="table">
-  <thead>
-    <tr><th>Project</th><th>Repository</th><th>Branches</th><th>Running</th><th></th></tr>
-  </thead>
-  <tbody>
-  {% for row in rows %}
-    <tr>
-      <td><a href="/projects/{{ row.project.id }}"><strong>{{ row.project.display_name }}</strong></a>
-          <div class="muted small">{{ row.project.slug }} · Odoo {{ row.project.odoo_version or default_odoo_version }}</div></td>
-      <td class="small">
-        {% if row.project.repo_url %}{{ row.project.repo_url }}
-        {% else %}<span class="muted">not configured</span>{% endif %}
-      </td>
-      <td>{{ row.branch_count }}</td>
-      <td>{{ row.running }}</td>
-      <td><a class="button" href="/projects/{{ row.project.id }}">Open</a></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">No projects yet. Create the first one below.</p>
-{% endif %}
+<div class="dashboard-main">
+  <section>
+    <div class="section-head">
+      <h2>Projects</h2>
+      <span class="muted small">{{ totals.projects }} total</span>
+    </div>
 
-<details class="card">
-  <summary><strong>New project</strong></summary>
-  <form method="post" action="/projects" class="stack">
-    <label>Name (slug)
-      <input name="slug" placeholder="my-odoo" pattern="[A-Za-z0-9 _-]+" required>
-    </label>
-    <label>Display name
-      <input name="display_name" placeholder="My Odoo">
-    </label>
-    <label>Git repository URL (https, optional)
-      <input name="repo_url" placeholder="Leave empty to add later">
-    </label>
-    <p class="muted small">Leave empty to deploy base Odoo now; add the repository later in Project settings.</p>
-    <details class="repo-help">
-      <summary class="small"><strong>Using a private repository?</strong></summary>
-      {% include "partials/private_repo_help.html" %}
+    {% if rows %}
+    <div class="project-grid">
+      {% for row in rows %}
+      {% set p = row.project %}
+      <article class="project-card">
+        <div class="project-card-top">
+          <div>
+            <h3><a href="/projects/{{ p.id }}">{{ p.display_name }}</a></h3>
+            <div class="muted small">{{ p.slug }}</div>
+          </div>
+          <span class="status-dot {{ 'running' if row.running else ('idle' if row.branch_count else 'empty') }}"
+                title="{{ row.running }} running of {{ row.branch_count }} branches"></span>
+        </div>
+        <div class="project-repo" title="{{ row.repo_display or 'No repository configured' }}">
+          {% if row.repo_display %}{{ row.repo_display }}{% else %}<span class="muted">No repository configured</span>{% endif %}
+        </div>
+        <div class="project-meta">
+          <span class="chip">Odoo {{ p.odoo_version or default_odoo_version }}</span>
+          <span class="chip">{{ row.branch_count }} branch{{ '' if row.branch_count == 1 else 'es' }}</span>
+          <span class="chip {{ 'ok' if row.running else '' }}">{{ row.running }} running</span>
+        </div>
+        <div class="project-actions">
+          <a class="button small-btn" href="/projects/{{ p.id }}">Open</a>
+          <a class="small-btn" href="/projects/{{ p.id }}/settings" title="Project settings" aria-label="Project settings">&#9881;</a>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <strong>No projects yet</strong>
+      <div class="small">Open <em>New project</em> below to connect your first repository.</div>
+    </div>
+    {% endif %}
+
+    <details class="card new-project">
+      <summary><span class="plus" aria-hidden="true">+</span>New project</summary>
+      <form method="post" action="/projects" class="stack">
+        <label>Name (slug)
+          <input name="slug" placeholder="my-odoo" pattern="[A-Za-z0-9 _-]+" required>
+        </label>
+        <label>Display name
+          <input name="display_name" placeholder="My Odoo">
+        </label>
+        <label>Git repository URL (https, optional)
+          <input name="repo_url" placeholder="Leave empty to add later">
+        </label>
+        <p class="muted small">Leave empty to deploy base Odoo now; add the repository later in Project settings.</p>
+        <details class="repo-help">
+          <summary class="small"><strong>Using a private repository?</strong></summary>
+          {% include "partials/private_repo_help.html" %}
+        </details>
+        <label>Odoo version
+          <select name="odoo_version">
+            {% for version in odoo_versions %}
+            <option value="{{ version }}" {{ 'selected' if version == default_odoo_version else '' }}>Odoo {{ version }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="muted small">Only versions with a built base image are listed. Build more with
+          <code>sudo ./install.sh --odoo-versions "17.0 18.0 19.0 20.0"</code>.</p>
+        <button class="primary" type="submit">Create project</button>
+      </form>
     </details>
-    <label>Odoo version
-      <select name="odoo_version">
-        {% for version in odoo_versions %}
-        <option value="{{ version }}" {{ 'selected' if version == default_odoo_version else '' }}>Odoo {{ version }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <p class="muted small">Only versions with a built base image are listed. Build more with
-      <code>sudo ./install.sh --odoo-versions "17.0 18.0 19.0 20.0"</code>.</p>
-    <button class="primary" type="submit">Create project</button>
-  </form>
-</details>
+  </section>
+
+  <aside class="card activity-panel">
+    <div class="section-head">
+      <h2>Recent activity</h2>
+      <span class="live-dot" aria-hidden="true"></span>
+    </div>
+    <ul class="events compact">
+      {% for item in activity %}
+      <li>
+        <span class="kind {{ item.event.kind }}">{{ item.event.kind }}</span>
+        <span class="event-message small">{{ item.event.message[:140] }}{% if item.event.message|length > 140 %}…{% endif %}</span>
+        <div class="event-meta muted small">
+          {{ item.project.display_name if item.project else 'Unknown project' }} · {{ item.event.created_at.strftime('%m-%d %H:%M') }}
+        </div>
+      </li>
+      {% else %}
+      <li class="muted">No activity yet</li>
+      {% endfor %}
+    </ul>
+  </aside>
+</div>
 {% endblock %}

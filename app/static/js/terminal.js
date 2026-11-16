@@ -15,6 +15,23 @@
     return proto + "//" + window.location.host + path;
   }
 
+  function currentTheme() {
+    var light = document.documentElement.getAttribute("data-theme") === "light";
+    return light
+      ? {
+          background: "#f7f9fc",
+          foreground: "#14202b",
+          cursor: "#875a7b",
+          selectionBackground: "#c7d6e6",
+        }
+      : {
+          background: "#000000",
+          foreground: "#dce7f1",
+          cursor: "#875a7b",
+          selectionBackground: "#33475c",
+        };
+  }
+
   function initTerminal(el) {
     var mode = el.dataset.mode || "logs";
     var term = new window.Terminal({
@@ -23,17 +40,17 @@
       cursorBlink: mode === "shell",
       convertEol: true,
       scrollback: 5000,
-      theme: {
-        background: "#000000",
-        foreground: "#dce7f1",
-        cursor: "#875a7b",
-        selectionBackground: "#33475c",
-      },
+      theme: currentTheme(),
     });
     var fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(el);
     fit.fit();
+
+    window.addEventListener("paas-theme-change", function () {
+      term.options.theme = currentTheme();
+      term.refresh(0, term.rows - 1);
+    });
 
     var socket = new WebSocket(wsUrl(el.dataset.path));
     socket.binaryType = "arraybuffer";

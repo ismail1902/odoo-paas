@@ -17,7 +17,7 @@ import secrets
 import shutil
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -64,6 +64,22 @@ def _slugify(value: str) -> str:
 
 def _db_name(project: Project, branch_name: str) -> str:
     return f"paas_{project.slug}_{_slugify(branch_name).replace('-', '_')}"[:60]
+
+
+def _redact_url(url: str) -> str:
+    """Strip credentials from a repository URL before displaying it."""
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+        if not parts.scheme or not parts.netloc:
+            return url
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return urlunsplit((parts.scheme, host, parts.path, "", ""))
+    except ValueError:
+        return url
 
 
 def _msg(request: Request) -> str:
@@ -160,8 +176,22 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
                 "project": project,
                 "branch_count": len(branches),
                 "running": sum(1 for b in branches if b.status == "running"),
+                "repo_display": _redact_url(project.repo_url),
             }
         )
+    totals = {
+        "projects": len(rows),
+        "branches": sum(row["branch_count"] for row in rows),
+        "running": sum(row["running"] for row in rows),
+    }
+    events = session.exec(
+        select(Event).order_by(Event.id.desc()).limit(12)
+    ).all()
+    projects_by_id = {project.id: project for project in projects}
+    activity = [
+        {"event": event, "project": projects_by_id.get(event.project_id)}
+        for event in events
+    ]
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -169,6 +199,8 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             request,
             user,
             rows=rows,
+            totals=totals,
+            activity=activity,
             odoo_versions=docker_ctl.list_base_versions(),
             default_odoo_version=settings.ODOO_VERSION,
         ),
@@ -326,6 +358,7 @@ def project_page(project_id: int, request: Request, session: Session = Depends(g
             request,
             user,
             project=project,
+            repo_display=_redact_url(project.repo_url),
             grouped=grouped,
             stages=STAGES,
             events=events,

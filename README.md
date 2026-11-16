@@ -44,6 +44,10 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
   Settings.
 - **Backups** — `pg_dump` + filestore tarball. Retention: keep everything for
   3 days, then 7 daily, 4 weekly, 3 monthly snapshots.
+- **Fleet dashboard** — project cards with branch/running counts, available
+  Odoo versions and a global recent-activity feed.
+- **Light, dark or system theme** — persistent per browser, switchable from
+  the topbar; terminals and monitor charts follow the selected theme.
 - **Roles** — `developer` < `tester` < `admin`. Shell access is stage-aware:
   development = any role, staging = tester+, production = admin only.
 - **Mailpit** — every outgoing email from every branch is captured by
