@@ -134,6 +134,10 @@ There is no test suite; verify by:
   `/mnt/enterprise`). `docker_ctl.server_command` / `task_command` add it to
   `--addons-path` only when `enterprise=True`; pass the project flag through
   the builder and branch Start.
+- Git credentials are stripped from URLs and passed through a temporary
+  `GIT_ASKPASS` helper (`gitops._credentials` / `_git(credentials=...)`).
+  Never put tokens back into clone/fetch arguments, logs or error messages;
+  existing checkouts get their `origin` reset to the clean URL on sync.
 - Development builds with tests enabled run **only the modules listed in
   branch Settings** (`--test-tags <modules>`); the base/web suite is
   deliberately skipped because its barcode/PDF/font tests need tooling the

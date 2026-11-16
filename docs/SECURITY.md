@@ -54,6 +54,12 @@ out of the platform or deploy via admins only.
 | SMTP password (Odoo config) | state DB, `Project.odoo_config` (plaintext) | edit project settings |
 | UI passwords | state DB (hashes only) | `manage set-password` |
 
+Repository tokens are stored in project URLs, but git operations pass them
+through a temporary `GIT_ASKPASS` helper instead of the command line.
+Clone/fetch URLs are stripped of credentials before reaching git, and existing
+checkouts use clean `origin` URLs. Tokens remain visible in the project
+settings UI and the state database.
+
 `.env` is excluded from rsync updates on the server (only created when
 missing) and from git (`.gitignore`).
 
