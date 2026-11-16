@@ -64,6 +64,9 @@ class Settings:
 
         self.PORT_RANGE_START = _int("PORT_RANGE_START", 9000)
         self.PORT_RANGE_END = _int("PORT_RANGE_END", 9990)
+        self.GEVENT_PORT_RANGE_START = _int("GEVENT_PORT_RANGE_START", 10000)
+        self.GEVENT_PORT_RANGE_END = _int("GEVENT_PORT_RANGE_END", 10990)
+        self.ACME_EMAIL = os.environ.get("ACME_EMAIL", "")
 
         self.DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "odoo-paas")
         self.PG_CONTAINER = os.environ.get("PG_CONTAINER", "odoo-paas-pg")

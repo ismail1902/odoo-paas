@@ -29,6 +29,10 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
   `odoo-paas/base:<version>` from the latest Odoo source for the selected
   version, runs `-u all` when the database exists, and redeploys the branch
   in one serialized build.
+- **Custom domains and HTTPS.** With Proxy mode enabled, each branch can
+  have a domain. nginx is configured automatically (including the
+  websocket/gevent upstream) and Let's Encrypt certificates are issued and
+  renewed with certbot.
 - **Push-to-deploy.** GitHub webhooks (HMAC-verified) trigger builds; a manual
   *Deploy* button does the same.
 - **Works before your first push.** An empty repository (or a branch that is

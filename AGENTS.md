@@ -64,6 +64,7 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/services/gitops.py` | git sync/checkout, commit metadata, webhook HMAC verify |
 | `app/services/backups.py` | dump/restore/retention (3d + 7/4/3 buckets) |
 | `app/services/monitor.py` | psutil host stats + container stats |
+| `app/services/nginx.py` | per-branch nginx config, Let's Encrypt, reload/rollback |
 | `app/templates/` | base/login/dashboard/project/branch/build + `partials/` (htmx) |
 | `app/static/` | `css/app.css`, `js/theme.js`, `js/dashboard.js`, `js/terminal.js` (xterm.js), `js/monitor.js` (Chart.js polling) |
 | `docker/odoo-base/Dockerfile` | shared Odoo image; system-wide Odoo requirements |
@@ -140,6 +141,12 @@ There is no test suite; verify by:
   `GIT_ASKPASS` helper (`gitops._credentials` / `_git(credentials=...)`).
   Never put tokens back into clone/fetch arguments, logs or error messages;
   existing checkouts get their `origin` reset to the clean URL on sync.
+- Custom domains are per branch (`Branch.domain`). A domain gets a
+  loopback-only `Branch.gevent_port`; Docker publishes `8072/tcp` only on
+  `127.0.0.1`. All nginx/certbot operations go through
+  `app/services/nginx.py` (write config, `nginx -t`, rollback, reload).
+  Domains require `proxy_mode` in the project Odoo configuration; use
+  subdomains, never path prefixes.
 - Development builds with tests enabled run **only the modules listed in
   branch Settings** (`--test-tags <modules>`); the base/web suite is
   deliberately skipped because its barcode/PDF/font tests need tooling the

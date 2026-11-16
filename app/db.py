@@ -88,6 +88,18 @@ def _migrate() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE build ADD COLUMN rebuild_base BOOLEAN DEFAULT 0"
             )
+        branch_columns = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(branch)").fetchall()
+        }
+        if "gevent_port" not in branch_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE branch ADD COLUMN gevent_port INTEGER DEFAULT 0"
+            )
+        if "domain" not in branch_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE branch ADD COLUMN domain VARCHAR DEFAULT ''"
+            )
 
 
 @contextmanager

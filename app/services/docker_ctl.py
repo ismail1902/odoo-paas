@@ -248,6 +248,8 @@ def server_command(branch, config=None, enterprise: bool = False) -> list:
         "0.0.0.0",
         "--http-port",
         "8069",
+        "--gevent-port",
+        "8072",
         "--log-level",
         str(log_level),
         "--max-cron-threads",
@@ -306,6 +308,10 @@ def start_server_container(branch, config=None, enterprise: bool = False) -> Non
         existing.remove(force=True)
     except Exception:  # noqa: BLE001 - not found
         pass
+    ports = {"8069/tcp": branch.port}
+    gevent_port = getattr(branch, "gevent_port", 0)
+    if gevent_port:
+        ports["8072/tcp"] = ("127.0.0.1", gevent_port)
     c.containers.run(
         image_for(branch),
         server_command(branch, config, enterprise),
@@ -315,7 +321,7 @@ def start_server_container(branch, config=None, enterprise: bool = False) -> Non
         network=settings.DOCKER_NETWORK,
         volumes=_volumes(branch),
         environment=_env(branch),
-        ports={"8069/tcp": branch.port},
+        ports=ports,
         user="odoo",
         working_dir="/mnt/user",
         restart_policy={"Name": "unless-stopped"},

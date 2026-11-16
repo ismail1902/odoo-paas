@@ -21,6 +21,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 |---|---|
 | Deploy / redeploy a branch | UI: branch → Deploy. Or push to the git branch (webhook). |
 | Update Odoo core to latest | branch → **Update Odoo + Deploy** (rebuilds `odoo-paas/base:<version>` from the latest source, runs `-u all` when the DB exists, then deploys). Take a production backup first. |
+| Add a domain / HTTPS | Enable Proxy mode in Project settings, set the branch's **Custom domain**, ensure DNS and 80/443 are open, then Deploy. Config: `/etc/nginx/conf.d/odoo-paas-branch-<id>.conf`. |
 | Inspect live resource usage | branch → **Monitor**: CPU/RAM/network/disk charts poll `/api/monitor` every 2 s; use **Pause** to freeze the view. |
 | Restart a stuck Odoo | UI: branch → Restart. (Start re-creates the container.) |
 | Stop everything for a branch | UI: branch → Stop. `docker stop odoo-paas-branch-<id>` equivalent. |
@@ -75,6 +76,18 @@ does not require "Update modules on deploy".
 ### "Docker is not available"
 Control plane cannot reach `/var/run/docker.sock`: `systemctl status docker`,
 `docker info`. The service must run as root (install.sh does this).
+
+### Domain / HTTPS not working
+
+- `Custom domain` requires **Proxy mode** in Project settings.
+- DNS must resolve the hostname to this server and ports **80/443** must be
+  open in the OCI security list and host firewall.
+- `nginx -t` must pass; the platform rolls back invalid configs.
+- certbot failures usually mean DNS is not pointing at the server yet or
+  port 80 is blocked. Fix DNS/firewall, then save the domain again to retry.
+- After setting a domain, **Deploy** the branch so the loopback gevent port
+  is published; websockets use `/websocket` on that port.
+- Logs: `/var/log/nginx/odoo-paas-<branch-id>.{access,error}.log`.
 
 ### Odoo container exits after a project-settings change
 

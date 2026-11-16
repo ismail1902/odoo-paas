@@ -92,6 +92,42 @@ rejected from the advanced field. Changes apply to all branches on their next
 **Deploy** or **Start**; running containers keep their current command until
 then.
 
+### Custom domains and HTTPS
+
+Use **subdomains per branch** rather than path prefixes:
+
+```text
+app.example.com       -> production
+staging.example.com   -> staging
+dev.example.com       -> development
+```
+
+Point the hostnames (or a wildcard `*.example.com`) at the server, open
+**80/443** in the OCI security list and on the host firewall, and set
+`ACME_EMAIL` in `/opt/odoo-paas/.env`. Then:
+
+1. Enable **Proxy mode** in Project settings → Odoo configuration.
+2. Open the branch → Settings → **Custom domain** and enter the hostname.
+3. Deploy the branch so the loopback gevent port is published.
+
+The platform writes `/etc/nginx/conf.d/odoo-paas-branch-<id>.conf`, tests it
+with `nginx -t`, reloads nginx, and obtains a Let's Encrypt certificate with
+certbot. The generated config follows Odoo's official
+[Nginx HTTPS sample](https://www.odoo.com/documentation/20.0/administration/on_premise/deploy.html#https):
+separate HTTP and websocket/gevent upstreams, `X-Forwarded-*` headers,
+HTTPS with HSTS, and `/websocket` (plus legacy `/longpolling`) forwarding.
+Certificates renew through certbot's systemd timer, with nginx reloaded by
+the deploy hook.
+
+`install.sh` installs nginx and certbot and opens 80/443 when ufw is active.
+On an existing server, install them once with
+`apt-get install -y nginx certbot` and open the ports in the OCI console.
+
+Avoid `example.com/staging`-style prefixes: Odoo generates absolute URLs,
+assets and cookies, so path-prefixed reverse proxying is fragile. If you only
+have one hostname, use separate ports (the current `http://IP:9000` model)
+or subdomains.
+
 ### Repository layout the platform expects
 
 ```

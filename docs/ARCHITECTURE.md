@@ -111,6 +111,24 @@ until then.
 
 Both endpoints resolve the session cookie with `current_user_ws`.
 
+## Custom domains and reverse proxy (`app/services/nginx.py`)
+
+Branches can optionally own a `domain`. A branch with a domain gets a
+loopback-only `gevent_port` from `GEVENT_PORT_RANGE_START..END`; Docker
+publishes the container's `8072/tcp` on `127.0.0.1:<gevent_port>` and Odoo
+runs with `--gevent-port 8072`. The HTTP port remains public on the branch
+port.
+
+The control plane generates `/etc/nginx/conf.d/odoo-paas-branch-<id>.conf`
+from Odoo's official Nginx HTTPS sample: separate HTTP and gevent upstreams,
+`/websocket` (and legacy `/longpolling`) upgrades, `X-Forwarded-*` headers,
+HTTP→HTTPS redirect, HSTS, and optional `proxy_cookie_flags`. It writes
+through `nginx -t` with rollback, reloads nginx, and uses certbot webroot
+challenges for Let's Encrypt. Odoo must have `proxy_mode` enabled in the
+project Odoo configuration.
+
+Subdomains are the supported layout; path-prefixed Odoo deployments are not.
+
 ## Monitoring (`app/services/monitor.py`, `app/static/js/monitor.js`)
 
 The Monitor tab polls `GET /api/monitor/{branch_id}` every 2 s. The endpoint

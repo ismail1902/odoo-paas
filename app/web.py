@@ -35,7 +35,7 @@ from app.auth import (
 )
 from app.config import settings
 from app.db import get_session
-from app.errors import DeployError
+from app.errors import DeployError, PlatformError
 from app.models import (
     BUILD_QUEUED,
     STAGES,
@@ -46,9 +46,9 @@ from app.models import (
     Project,
     User,
 )
-from app.ports import allocate_port
+from app.ports import allocate_gevent_port, allocate_port
 from app.services import backups as backups_service
-from app.services import docker_ctl, gitops, monitor
+from app.services import docker_ctl, gitops, monitor, nginx
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -326,6 +326,10 @@ def delete_project(
         return _back(f"/projects/{project_id}", "Type the project name to confirm deletion")
     branches = session.exec(select(Branch).where(Branch.project_id == project_id)).all()
     for branch in branches:
+        try:
+            nginx.remove(branch)
+        except Exception:  # noqa: BLE001 - deletion should not be blocked
+            pass
         docker_ctl.remove_container(branch.container_name)
         session.delete(branch)
     session.delete(project)
@@ -457,6 +461,13 @@ def branch_page(
     repo = docker_ctl.repo_dir(branch)
     commits = gitops.recent_commits(repo) if (repo / ".git").exists() else []
     stats = monitor.branch_stats(branch) if tab == "monitor" else None
+    proxy_mode = bool(
+        project and odoo_config.parse_config(project.odoo_config).get("proxy_mode")
+    )
+    domain_url = ""
+    if branch.domain:
+        scheme = "https" if nginx.certificate_exists(branch.domain) else "http"
+        domain_url = f"{scheme}://{branch.domain}"
     return templates.TemplateResponse(
         request,
         "branch.html",
@@ -472,6 +483,8 @@ def branch_page(
             commits=commits,
             tab=tab,
             stats=stats,
+            proxy_mode=proxy_mode,
+            domain_url=domain_url,
             can_shell=can_open_shell(user, branch.stage),
             container_state=docker_ctl.container_state(branch.container_name),
         ),
@@ -600,6 +613,94 @@ def branch_settings(
     return _back(f"/branches/{branch_id}?tab=settings", "Settings saved")
 
 
+@router.post("/branches/{branch_id}/domain")
+def branch_domain(
+    branch_id: int,
+    request: Request,
+    domain: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    branch = session.get(Branch, branch_id)
+    if branch is None:
+        return _back("/", "Branch not found")
+    project = session.get(Project, branch.project_id)
+    proxy_mode = bool(
+        project and odoo_config.parse_config(project.odoo_config).get("proxy_mode")
+    )
+    domain = (domain or "").strip().lower().rstrip(".")
+    if domain:
+        if not proxy_mode:
+            return _back(
+                f"/branches/{branch_id}?tab=settings",
+                "Enable Proxy mode in Project settings before assigning a domain",
+            )
+        try:
+            domain = nginx.normalize_domain(domain)
+        except PlatformError as exc:
+            return _back(f"/branches/{branch_id}?tab=settings", str(exc))
+        existing = session.exec(
+            select(Branch).where(Branch.domain == domain, Branch.id != branch_id)
+        ).first()
+        if existing:
+            return _back(
+                f"/branches/{branch_id}?tab=settings",
+                f"Domain is already assigned to branch '{existing.name}'",
+            )
+        if not branch.gevent_port:
+            try:
+                branch.gevent_port = allocate_gevent_port(session)
+            except DeployError as exc:
+                return _back(f"/branches/{branch_id}?tab=settings", str(exc))
+        try:
+            result = nginx.provision(branch, domain, settings.ACME_EMAIL)
+        except PlatformError as exc:
+            return _back(
+                f"/branches/{branch_id}?tab=settings",
+                f"Domain not saved: {exc}",
+            )
+        branch.domain = domain
+        session.add(branch)
+        session.add(
+            Event(
+                project_id=branch.project_id,
+                branch_id=branch_id,
+                kind="info",
+                message=f"Domain set to {domain}",
+            )
+        )
+        session.commit()
+        return _back(
+            f"/branches/{branch_id}?tab=settings",
+            f"{result}. Deploy the branch to publish the gevent port.",
+        )
+    if branch.domain:
+        try:
+            nginx.remove(branch)
+        except PlatformError as exc:
+            return _back(
+                f"/branches/{branch_id}?tab=settings",
+                f"Could not remove nginx config: {exc}",
+            )
+        old_domain = branch.domain
+        branch.domain = ""
+        branch.gevent_port = 0
+        session.add(branch)
+        session.add(
+            Event(
+                project_id=branch.project_id,
+                branch_id=branch_id,
+                kind="info",
+                message=f"Domain {old_domain} removed",
+            )
+        )
+        session.commit()
+        return _back(f"/branches/{branch_id}?tab=settings", "Domain removed")
+    return _back(f"/branches/{branch_id}?tab=settings", "No domain configured")
+
+
 @router.post("/branches/{branch_id}/delete")
 def delete_branch(
     branch_id: int,
@@ -618,6 +719,10 @@ def delete_branch(
     if confirm.strip() != branch.name:
         return _back(f"/branches/{branch_id}?tab=settings", "Type the branch name to confirm deletion")
     project_id = branch.project_id
+    try:
+        nginx.remove(branch)
+    except Exception:  # noqa: BLE001 - deletion should not be blocked
+        pass
     docker_ctl.remove_container(branch.container_name)
     try:
         docker_ctl.drop_database(branch.db_name)

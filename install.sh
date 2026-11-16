@@ -9,6 +9,7 @@
 #   sudo ./install.sh --rebuild-base        rebuild the Odoo base image too
 #   sudo ./install.sh --odoo-versions "17.0 20.0"  build several versions
 #   sudo ./install.sh --wkhtmltopdf-deb URL extra .deb for arm64 PDF reports
+#   sudo ./install.sh --acme-email you@example.com  Let's Encrypt expiry contact
 #
 # What it does, in order:
 #   1. apt prerequisites + Docker (via get.docker.com when missing)
@@ -27,6 +28,9 @@ DATA_DIR=/var/lib/odoo-paas
 ENV_FILE="$TARGET_DIR/.env"
 ODOO_VERSION="${ODOO_VERSION:-17.0}"
 PORT="${PORT:-8000}"
+GEVENT_PORT_RANGE_START="${GEVENT_PORT_RANGE_START:-10000}"
+GEVENT_PORT_RANGE_END="${GEVENT_PORT_RANGE_END:-10990}"
+ACME_EMAIL="${ACME_EMAIL:-}"
 BASE_IMAGE="odoo-paas/base:${ODOO_VERSION}"
 PG_CONTAINER=odoo-paas-pg
 MAILPIT_CONTAINER=odoo-paas-mailpit
@@ -49,6 +53,7 @@ while [[ $# -gt 0 ]]; do
     --rebuild-base)   REBUILD_BASE=1; shift ;;
     --odoo-versions)  ODOO_VERSIONS_ARG="$2"; shift 2 ;;
     --wkhtmltopdf-deb) WKHTMLTOPDF_DEB="$2"; shift 2 ;;
+    --acme-email)     ACME_EMAIL="$2"; shift 2 ;;
     --odoo-version)   ODOO_VERSION="$2"; BASE_IMAGE="odoo-paas/base:$2"; shift 2 ;;
     -h|--help)        sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -64,7 +69,7 @@ warn() { printf '\033[1;33mwarning: %s\033[0m\n' "$*" >&2; }
 log "Installing prerequisites"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates rsync git python3 python3-venv python3-pip openssl >/dev/null
+apt-get install -y -qq curl ca-certificates rsync git python3 python3-venv python3-pip openssl nginx certbot >/dev/null
 
 if ! command -v docker >/dev/null 2>&1; then
   log "Installing Docker (get.docker.com)"
@@ -72,6 +77,9 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 systemctl enable --now docker >/dev/null 2>&1 || true
 docker info >/dev/null 2>&1 || { echo "Docker daemon not reachable" >&2; exit 1; }
+systemctl enable --now nginx >/dev/null 2>&1 || true
+mkdir -p /var/www/letsencrypt
+chown www-data:www-data /var/www/letsencrypt
 
 # ------------------------------------------------------------------ 2. copy repo
 log "Syncing platform to $TARGET_DIR"
@@ -100,6 +108,9 @@ DATA_DIR=$DATA_DIR
 HOST=0.0.0.0
 PORT=$PORT
 PUBLIC_HOST=$PUBLIC_HOST
+GEVENT_PORT_RANGE_START=$GEVENT_PORT_RANGE_START
+GEVENT_PORT_RANGE_END=$GEVENT_PORT_RANGE_END
+ACME_EMAIL=$ACME_EMAIL
 
 PG_CONTAINER=$PG_CONTAINER
 PG_USER=odoo
@@ -119,6 +130,13 @@ else
   log "Keeping existing $ENV_FILE"
   PG_PASSWORD="$(grep -m1 '^PG_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
   [[ -n "$PUBLIC_HOST" ]] && sed -i "s|^PUBLIC_HOST=.*|PUBLIC_HOST=$PUBLIC_HOST|" "$ENV_FILE"
+  if [[ -n "$ACME_EMAIL" ]]; then
+    if grep -q '^ACME_EMAIL=' "$ENV_FILE"; then
+      sed -i "s|^ACME_EMAIL=.*|ACME_EMAIL=$ACME_EMAIL|" "$ENV_FILE"
+    else
+      echo "ACME_EMAIL=$ACME_EMAIL" >> "$ENV_FILE"
+    fi
+  fi
 fi
 
 # ------------------------------------------------------------------ 4. containers
@@ -206,6 +224,8 @@ systemctl restart odoo-paas
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   log "Opening firewall ports"
   ufw allow "$PORT"/tcp >/dev/null
+  ufw allow 80/tcp >/dev/null
+  ufw allow 443/tcp >/dev/null
   ufw allow 9000:9990/tcp >/dev/null
 fi
 

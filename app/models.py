@@ -66,6 +66,8 @@ class Branch(SQLModel, table=True):
     stage: str = "development"
     odoo_version: str = ""  # copied from the project at creation time
     port: int = 0
+    gevent_port: int = 0  # loopback-only port for websocket/longpolling
+    domain: str = ""  # optional reverse-proxy hostname
     db_name: str = ""
     status: str = "new"  # new|building|running|failed|stopped
     # Branch settings (the Settings tab)

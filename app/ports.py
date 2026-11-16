@@ -40,6 +40,23 @@ def allocate_port(session: Session) -> int:
     )
 
 
+def allocate_gevent_port(session: Session) -> int:
+    taken = {
+        row for row in session.exec(select(Branch.gevent_port)).all() if row
+    }
+    for port in range(
+        settings.GEVENT_PORT_RANGE_START, settings.GEVENT_PORT_RANGE_END + 1
+    ):
+        if port in taken:
+            continue
+        if is_port_free(port):
+            return port
+    raise DeployError(
+        "No free gevent port in range "
+        f"{settings.GEVENT_PORT_RANGE_START}-{settings.GEVENT_PORT_RANGE_END}"
+    )
+
+
 def find_free_port(session: Session) -> Optional[int]:
     try:
         return allocate_port(session)

@@ -20,6 +20,7 @@
       {{ project.slug }} · stage <strong>{{ branch.stage }}</strong> · Odoo {{ branch.odoo_version }} · port {{ branch.port }} ·
       container {{ container_state }} ·
       <a href="http://{{ public_host }}:{{ branch.port }}" target="_blank" rel="noopener">http://{{ public_host }}:{{ branch.port }}</a>
+      {% if branch.domain %} · <a href="{{ domain_url }}" target="_blank" rel="noopener">{{ domain_url }}</a>{% endif %}
     </div>
   </div>
   <div class="row gap">
@@ -148,6 +149,31 @@
 {% include "partials/monitor.html" %}
 
 {% elif tab == 'settings' %}
+<div class="card">
+  <h3>Custom domain</h3>
+  {% if not proxy_mode %}
+  <p class="muted small">
+    Enable <strong>Proxy mode</strong> in
+    <a href="/projects/{{ project.id }}/settings">Project settings</a>
+    before assigning a domain.
+  </p>
+  {% else %}
+  <form method="post" action="/branches/{{ branch.id }}/domain" class="stack">
+    <label>Domain
+      <input name="domain" value="{{ branch.domain }}" placeholder="app.example.com">
+    </label>
+    <p class="muted small">
+      nginx is configured automatically, including the websocket/gevent port.
+      HTTPS uses Let's Encrypt; set <code>ACME_EMAIL</code> in <code>.env</code>
+      for expiry notices. Deploy after saving so the gevent port is published.
+    </p>
+    <button class="primary" type="submit">Save domain</button>
+  </form>
+  {% endif %}
+  {% if branch.domain %}
+  <p class="small">Current: <a href="{{ domain_url }}" target="_blank" rel="noopener">{{ domain_url }}</a></p>
+  {% endif %}
+</div>
 <div class="card">
   <h3>Stage</h3>
   <p class="muted small">Only the database name is stage-independent; moving stages does not move data.</p>

@@ -1,8 +1,8 @@
 [Unit]
 Description=Odoo PaaS control plane (FastAPI + build worker)
 Documentation=file:/opt/odoo-paas/docs/ARCHITECTURE.md
-After=network-online.target docker.service
-Wants=network-online.target
+After=network-online.target docker.service nginx.service
+Wants=network-online.target nginx.service
 Requires=docker.service
 
 [Service]
