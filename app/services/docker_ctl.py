@@ -149,38 +149,38 @@ def build_base_image(version: str, log: Callable[[str], None]) -> None:
     major = _version_key(version)[0]
     base_os = "python:3.12-slim-bookworm" if major >= 20 else "debian:bookworm-slim"
     context = settings.APP_DIR / "docker" / "odoo-base"
+    command = [
+        "docker",
+        "build",
+        "--build-arg",
+        f"BASE_IMAGE={base_os}",
+        "--build-arg",
+        f"ODOO_VERSION={version}",
+        "--build-arg",
+        f"WKHTMLTOPDF_DEB={settings.WKHTMLTOPDF_DEB}",
+        "-t",
+        tag,
+        str(context),
+    ]
     log(f"building {tag} from {base_os}")
-    c = client()
     try:
-        _image, stream = c.images.build(
-            path=str(context),
-            tag=tag,
-            buildargs={
-                "BASE_IMAGE": base_os,
-                "ODOO_VERSION": version,
-                "WKHTMLTOPDF_DEB": settings.WKHTMLTOPDF_DEB,
-            },
-            rm=True,
-            forcerm=True,
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
-        for chunk in stream:
-            text = chunk.get("stream")
-            if text:
-                for line in text.splitlines():
-                    if line.strip():
-                        log(line.rstrip())
-            error = chunk.get("error")
-            if error:
-                raise BuildError(f"docker build failed: {error.strip()}")
-    except BuildError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - surfaced as a BuildError
-        build_log = getattr(exc, "build_log", None) or []
-        for item in build_log[-20:]:
-            line = item.get("stream") if isinstance(item, dict) else str(item)
-            if line:
-                log(line.rstrip())
-        raise BuildError(f"docker build failed: {exc}")
+    except OSError as exc:
+        raise BuildError(f"docker build failed: {exc}") from exc
+    assert process.stdout is not None
+    for line in process.stdout:
+        text = line.rstrip()
+        if text:
+            log(text)
+    code = process.wait()
+    if code != 0:
+        raise BuildError(f"docker build failed (exit code {code})")
     log(f"image {tag} rebuilt")
 
 
