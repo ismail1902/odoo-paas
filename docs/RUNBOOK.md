@@ -86,7 +86,10 @@ Control plane cannot reach `/var/run/docker.sock`: `systemctl status docker`,
 - certbot failures usually mean DNS is not pointing at the server yet or
   port 80 is blocked. Fix DNS/firewall, then save the domain again to retry.
 - After setting a domain, **Deploy** the branch so the loopback gevent port
-  is published; websockets use `/websocket` on that port.
+  is published. Websockets use the gevent port only when the project's Odoo
+  config has **HTTP workers > 0**; with the default threaded server
+  (`workers = 0`) they use the main HTTP port. If you change workers, re-save
+  the domain and Deploy.
 - Logs: `/var/log/nginx/odoo-paas-<branch-id>.{access,error}.log`.
 
 ### Odoo container exits after a project-settings change

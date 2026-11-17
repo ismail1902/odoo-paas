@@ -120,12 +120,15 @@ runs with `--gevent-port 8072`. The HTTP port remains public on the branch
 port.
 
 The control plane generates `/etc/nginx/conf.d/odoo-paas-branch-<id>.conf`
-from Odoo's official Nginx HTTPS sample: separate HTTP and gevent upstreams,
-`/websocket` (and legacy `/longpolling`) upgrades, `X-Forwarded-*` headers,
-HTTP→HTTPS redirect, HSTS, and optional `proxy_cookie_flags`. It writes
-through `nginx -t` with rollback, reloads nginx, and uses certbot webroot
-challenges for Let's Encrypt. Odoo must have `proxy_mode` enabled in the
-project Odoo configuration.
+from Odoo's official Nginx HTTPS sample: separate HTTP and websocket
+upstreams, `/websocket` (and legacy `/longpolling`) upgrades,
+`X-Forwarded-*` headers, HTTP→HTTPS redirect, HSTS, and optional
+`proxy_cookie_flags`. The websocket upstream is the loopback gevent port only
+when the project's Odoo config has `workers > 0`; with the default threaded
+server (`workers = 0`) it points at the HTTP port. It writes through
+`nginx -t` with rollback, reloads nginx, and uses certbot webroot challenges
+for Let's Encrypt. Odoo must have `proxy_mode` enabled in the project Odoo
+configuration.
 
 Subdomains are the supported layout; path-prefixed Odoo deployments are not.
 

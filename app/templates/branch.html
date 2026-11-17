@@ -163,9 +163,16 @@
       <input name="domain" value="{{ branch.domain }}" placeholder="app.example.com">
     </label>
     <p class="muted small">
-      nginx is configured automatically, including the websocket/gevent port.
+      nginx is configured automatically, including websocket/longpolling routing.
       HTTPS uses Let's Encrypt; set <code>ACME_EMAIL</code> in <code>.env</code>
-      for expiry notices. Deploy after saving so the gevent port is published.
+      for expiry notices. Deploy after saving.
+      {% if workers %}
+      Websockets use the dedicated loopback gevent port.
+      {% else %}
+      Odoo is in threaded mode (HTTP workers = 0), so websockets use the HTTP
+      port. Set HTTP workers &gt; 0 in Project settings to use a dedicated
+      gevent port, then re-save this domain and Deploy.
+      {% endif %}
     </p>
     <button class="primary" type="submit">Save domain</button>
   </form>

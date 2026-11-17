@@ -461,9 +461,11 @@ def branch_page(
     repo = docker_ctl.repo_dir(branch)
     commits = gitops.recent_commits(repo) if (repo / ".git").exists() else []
     stats = monitor.branch_stats(branch) if tab == "monitor" else None
-    proxy_mode = bool(
-        project and odoo_config.parse_config(project.odoo_config).get("proxy_mode")
+    project_config = (
+        odoo_config.parse_config(project.odoo_config) if project else {}
     )
+    proxy_mode = bool(project_config.get("proxy_mode"))
+    workers = int(project_config.get("workers") or 0)
     domain_url = ""
     if branch.domain:
         scheme = "https" if nginx.certificate_exists(branch.domain) else "http"
@@ -484,6 +486,7 @@ def branch_page(
             tab=tab,
             stats=stats,
             proxy_mode=proxy_mode,
+            workers=workers,
             domain_url=domain_url,
             can_shell=can_open_shell(user, branch.stage),
             container_state=docker_ctl.container_state(branch.container_name),
@@ -627,9 +630,11 @@ def branch_domain(
     if branch is None:
         return _back("/", "Branch not found")
     project = session.get(Project, branch.project_id)
-    proxy_mode = bool(
-        project and odoo_config.parse_config(project.odoo_config).get("proxy_mode")
+    project_config = (
+        odoo_config.parse_config(project.odoo_config) if project else {}
     )
+    proxy_mode = bool(project_config.get("proxy_mode"))
+    workers = int(project_config.get("workers") or 0)
     domain = (domain or "").strip().lower().rstrip(".")
     if domain:
         if not proxy_mode:
@@ -655,7 +660,9 @@ def branch_domain(
             except DeployError as exc:
                 return _back(f"/branches/{branch_id}?tab=settings", str(exc))
         try:
-            result = nginx.provision(branch, domain, settings.ACME_EMAIL)
+            result = nginx.provision(
+                branch, domain, settings.ACME_EMAIL, workers=workers
+            )
         except PlatformError as exc:
             return _back(
                 f"/branches/{branch_id}?tab=settings",

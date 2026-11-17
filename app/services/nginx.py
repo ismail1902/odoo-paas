@@ -66,7 +66,9 @@ def _nginx_supports_cookie_flags() -> bool:
     return _VERSION_CACHE >= (1, 19, 8)
 
 
-def _proxy_locations(branch, secure_cookies: bool) -> str:
+def _proxy_locations(
+    branch, secure_cookies: bool, websocket_port: int
+) -> str:
     """Locations based on Odoo's official Nginx reverse-proxy sample."""
     odoo = f"odoo_http_{branch.id}"
     gevent = f"odoo_gevent_{branch.id}"
@@ -107,13 +109,13 @@ def _proxy_locations(branch, secure_cookies: bool) -> str:
     )
 
 
-def _render(branch, domain: str, ssl: bool) -> str:
-    if not getattr(branch, "gevent_port", 0):
-        raise PlatformError("This branch has no gevent port allocated")
+def _render(
+    branch, domain: str, ssl: bool, websocket_port: int
+) -> str:
     upstreams = (
         f"upstream odoo_http_{branch.id} {{ server 127.0.0.1:{branch.port}; }}\n"
         f"upstream odoo_gevent_{branch.id} {{ "
-        f"server 127.0.0.1:{branch.gevent_port}; }}\n"
+        f"server 127.0.0.1:{websocket_port}; }}\n"
     )
     upgrade_map = f"""map $http_upgrade $connection_upgrade_{branch.id} {{
     default upgrade;
@@ -135,7 +137,10 @@ def _render(branch, domain: str, ssl: bool) -> str:
     http_body = (
         f"{challenge}\n    location / {{ return 301 https://$host$request_uri; }}"
         if ssl
-        else challenge + _proxy_locations(branch, secure_cookies=False)
+        else challenge
+        + _proxy_locations(
+            branch, secure_cookies=False, websocket_port=websocket_port
+        )
     )
     http_block = f"""
 server {{
@@ -159,7 +164,7 @@ server {{
     error_log /var/log/nginx/odoo-paas-{branch.id}.error.log;
     gzip_types text/css text/scss text/plain text/xml application/xml application/json application/javascript;
     gzip on;
-{_proxy_locations(branch, secure_cookies=True)}
+{_proxy_locations(branch, secure_cookies=True, websocket_port=websocket_port)}
 }}
 """
     return upstreams + upgrade_map + http_block + tls_block
@@ -190,19 +195,31 @@ def _write_and_reload(path: Path, content: str) -> None:
         )
 
 
-def provision(branch, domain: str, email: str = "") -> str:
+def provision(
+    branch, domain: str, email: str = "", workers: int = 0
+) -> str:
     """Write the HTTP config, obtain a certificate, then enable HTTPS."""
     if settings.MOCK_DOCKER:
         return "mock mode: nginx config not written"
     if not available():
         raise PlatformError("nginx is not installed on this host")
-    if not getattr(branch, "gevent_port", 0):
-        raise PlatformError("This branch has no gevent port allocated")
+    workers = int(workers or 0)
+    if workers > 0:
+        if not getattr(branch, "gevent_port", 0):
+            raise PlatformError("This branch has no gevent port allocated")
+        websocket_port = branch.gevent_port
+    else:
+        # Odoo's threaded server terminates websockets on the HTTP port.
+        websocket_port = branch.port
     WEBROOT.mkdir(parents=True, exist_ok=True)
     path = config_path(branch)
-    _write_and_reload(path, _render(branch, domain, ssl=False))
+    _write_and_reload(
+        path, _render(branch, domain, ssl=False, websocket_port=websocket_port)
+    )
     if certificate_exists(domain):
-        _write_and_reload(path, _render(branch, domain, ssl=True))
+        _write_and_reload(
+            path, _render(branch, domain, ssl=True, websocket_port=websocket_port)
+        )
         return "HTTPS is enabled"
     if not certbot_available():
         return "HTTP is configured; certbot is not installed, so HTTPS was skipped"
@@ -231,7 +248,9 @@ def provision(branch, domain: str, email: str = "") -> str:
         lines = (result.stderr or result.stdout).strip().splitlines()
         detail = lines[-1] if lines else "certbot failed"
         return f"HTTP is configured; HTTPS pending: {detail[:300]}"
-    _write_and_reload(path, _render(branch, domain, ssl=True))
+    _write_and_reload(
+        path, _render(branch, domain, ssl=True, websocket_port=websocket_port)
+    )
     return "HTTPS is enabled"
 
 

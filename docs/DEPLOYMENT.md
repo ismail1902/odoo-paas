@@ -116,6 +116,13 @@ certbot. The generated config follows Odoo's official
 [Nginx HTTPS sample](https://www.odoo.com/documentation/20.0/administration/on_premise/deploy.html#https):
 separate HTTP and websocket/gevent upstreams, `X-Forwarded-*` headers,
 HTTPS with HSTS, and `/websocket` (plus legacy `/longpolling`) forwarding.
+
+Odoo only starts the dedicated gevent/longpolling listener when **HTTP
+workers > 0** (multi-processing). With the default threaded server
+(`workers = 0`), Odoo serves websockets on the main HTTP port, and the
+generated nginx config routes `/websocket` there. If you change the project's
+HTTP workers, re-save each branch domain and Deploy so nginx switches to the
+dedicated loopback gevent port.
 Certificates renew through certbot's systemd timer, with nginx reloaded by
 the deploy hook.
 
