@@ -123,9 +123,10 @@ The control plane generates `/etc/nginx/conf.d/odoo-paas-branch-<id>.conf`
 from Odoo's official Nginx HTTPS sample: separate HTTP and websocket
 upstreams, `/websocket` (and legacy `/longpolling`) upgrades,
 `X-Forwarded-*` headers, HTTP→HTTPS redirect, HSTS, and optional
-`proxy_cookie_flags`. The websocket upstream is the loopback gevent port only
-when the project's Odoo config has `workers > 0`; with the default threaded
-server (`workers = 0`) it points at the HTTP port. It writes through
+`proxy_cookie_flags`. The realtime upstream is the loopback port only when
+the project's Odoo config has `workers > 0`; with the default threaded
+server (`workers = 0`) it points at the HTTP port. Odoo 15 uses
+`--longpolling-port`; Odoo 16+ uses `--gevent-port`. It writes through
 `nginx -t` with rollback, reloads nginx, and uses certbot webroot challenges
 for Let's Encrypt. Odoo must have `proxy_mode` enabled in the project Odoo
 configuration.

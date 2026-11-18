@@ -169,9 +169,10 @@
       {% if workers %}
       Websockets use the dedicated loopback gevent port.
       {% else %}
-      Odoo is in threaded mode (HTTP workers = 0), so websockets use the HTTP
-      port. Set HTTP workers &gt; 0 in Project settings to use a dedicated
-      gevent port, then re-save this domain and Deploy.
+      Odoo is in threaded mode (HTTP workers = 0), so realtime
+      (websocket/longpolling) uses the HTTP port. Set HTTP workers &gt; 0 in
+      Project settings to use a dedicated gevent/longpolling port, then
+      re-save this domain and Deploy.
       {% endif %}
     </p>
     <button class="primary" type="submit">Save domain</button>

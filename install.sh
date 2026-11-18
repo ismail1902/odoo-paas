@@ -7,7 +7,7 @@
 #   sudo ./install.sh --public-host 1.2.3.4
 #   sudo ./install.sh --admin-email me@example.com --admin-password 'secret'
 #   sudo ./install.sh --rebuild-base        rebuild the Odoo base image too
-#   sudo ./install.sh --odoo-versions "17.0 20.0"  build several versions
+#   sudo ./install.sh --odoo-versions "15.0 16.0 17.0 20.0"  build several versions
 #   sudo ./install.sh --wkhtmltopdf-deb URL extra .deb for arm64 PDF reports
 #   sudo ./install.sh --acme-email you@example.com  Let's Encrypt expiry contact
 #
@@ -191,8 +191,11 @@ for version in $BUILD_VERSIONS; do
   image="odoo-paas/base:$version"
   # Odoo >= 20 needs Python >= 3.12 -> official python image (same Debian base).
   base_os="debian:bookworm-slim"
-  if [[ "${version%%.*}" -ge 20 ]]; then
+  major="${version%%.*}"
+  if [[ "$major" -ge 20 ]]; then
     base_os="python:3.12-slim-bookworm"
+  elif [[ "$major" -le 16 ]]; then
+    base_os="python:3.9-slim-bookworm"
   fi
   if [[ "$REBUILD_BASE" == "1" ]] || ! docker image inspect "$image" >/dev/null 2>&1; then
     log "Building $image (downloads Odoo $version - takes a few minutes)"

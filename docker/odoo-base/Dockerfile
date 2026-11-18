@@ -17,8 +17,10 @@
 #   docker build -t odoo-paas/base:17.0 docker/odoo-base
 #   docker build --build-arg ODOO_VERSION=16.0 -t odoo-paas/base:16.0 docker/odoo-base
 #
-# Odoo >= 20 requires Python >= 3.12, so install.sh builds those series from
-# the official python image instead of Debian's Python 3.11:
+# Odoo 15/16 need Python 3.9; Odoo 17-19 use Debian bookworm/Python 3.11;
+# Odoo >= 20 requires Python >= 3.12, so install.sh builds those series
+# from official Python images:
+#   docker build --build-arg BASE_IMAGE=python:3.9-slim-bookworm ...
 #   docker build --build-arg BASE_IMAGE=python:3.12-slim-bookworm ...
 ARG BASE_IMAGE=debian:bookworm-slim
 FROM ${BASE_IMAGE}
@@ -34,14 +36,20 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8
 
 # Runtime libraries + build dependencies + Node tooling (asset compilation)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Bullseye (used for Odoo 15/16) has different LDAP/TIFF runtime package names.
+RUN if echo "$BASE_IMAGE" | grep -q bullseye; then \
+        ldap_runtime=libldap-2.4-2; tiff_runtime=libtiff5; \
+    else \
+        ldap_runtime=libldap-2.5-0; tiff_runtime=libtiff6; \
+    fi; \
+    apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates \
         python3 python3-dev python3-pip python3-venv \
         build-essential zlib1g-dev \
         libpq-dev libldap2-dev libsasl2-dev libxml2-dev libxslt1-dev \
         libjpeg-dev libfreetype6-dev libpng-dev libtiff-dev libopenjp2-7-dev libzip-dev \
-        libpq5 libldap-2.5-0 libsasl2-2 libxml2 libxslt1.1 libjpeg62-turbo \
-        libfreetype6 libpng16-16 libtiff6 libopenjp2-7 libzip4 \
+        libpq5 "$ldap_runtime" libsasl2-2 libxml2 libxslt1.1 libjpeg62-turbo \
+        libfreetype6 libpng16-16 "$tiff_runtime" libopenjp2-7 libzip4 \
         nodejs npm fonts-noto \
     && rm -rf /var/lib/apt/lists/*
 
@@ -56,12 +64,28 @@ RUN apt-get update \
     && rm -f /tmp/wkhtmltox.deb \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g --no-fund --no-audit less less-plugin-clean-css rtlcss \
-    && rm -rf /root/.npm
+RUN if echo "$BASE_IMAGE" | grep -q bullseye; then \
+        npm install -g --no-fund --no-audit \
+            less@3.13.1 less-plugin-clean-css@1.5.1 rtlcss@2.6.2; \
+    else \
+        npm install -g --no-fund --no-audit less less-plugin-clean-css rtlcss; \
+    fi && rm -rf /root/.npm
 
-# Odoo core pinned to a release branch
+# Odoo core pinned to a release branch. Odoo 15/16 pin gevent/greenlet
+# versions without arm64 wheels; use the Python 3.10 versions that have them.
 RUN git clone --depth 1 --branch "${ODOO_VERSION}" https://github.com/odoo/odoo.git /opt/odoo \
-    && pip3 install --break-system-packages --no-cache-dir -r /opt/odoo/requirements.txt
+    && if [ "${ODOO_VERSION%%.*}" -le 16 ]; then \
+        sed -i \
+            -e 's/^gevent==20\.9\.0/gevent==21.8.0/' \
+            -e 's/^greenlet==0\.4\.17/greenlet==1.1.2/' \
+            -e 's/^cryptography==2\.6\.1/cryptography==3.4.8/' \
+            /opt/odoo/requirements.txt; \
+    fi; \
+    if pip3 install --help 2>/dev/null | grep -q -- '--break-system-packages'; then \
+        pip3 install --break-system-packages --no-cache-dir -r /opt/odoo/requirements.txt; \
+    else \
+        pip3 install --no-cache-dir -r /opt/odoo/requirements.txt; \
+    fi
 
 # Container user (uid/gid 1000 - must match CONTAINER_UID in app/services/docker_ctl.py)
 RUN useradd --create-home --uid 1000 --shell /bin/bash odoo

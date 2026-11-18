@@ -80,7 +80,7 @@ class Settings:
         # Versions offered in mock mode / when no images are built yet.
         self.ODOO_VERSIONS = [
             v.strip()
-            for v in os.environ.get("ODOO_VERSIONS", "17.0,18.0,19.0,20.0").split(",")
+            for v in os.environ.get("ODOO_VERSIONS", "15.0,16.0,17.0,18.0,19.0,20.0").split(",")
             if v.strip()
         ]
 

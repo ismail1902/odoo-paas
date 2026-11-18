@@ -147,7 +147,12 @@ def build_base_image(version: str, log: Callable[[str], None]) -> None:
         log(f"[mock] docker build -t {tag} (Odoo {version})")
         return
     major = _version_key(version)[0]
-    base_os = "python:3.12-slim-bookworm" if major >= 20 else "debian:bookworm-slim"
+    if major >= 20:
+        base_os = "python:3.12-slim-bookworm"
+    elif major <= 16:
+        base_os = "python:3.9-slim-bookworm"
+    else:
+        base_os = "debian:bookworm-slim"
     context = settings.APP_DIR / "docker" / "odoo-base"
     command = [
         "docker",
@@ -235,6 +240,12 @@ def _base_odoo_argv(branch, enterprise: bool = False) -> list:
 
 
 def server_command(branch, config=None, enterprise: bool = False) -> list:
+    version = branch.odoo_version or settings.ODOO_VERSION
+    realtime_flag = (
+        "--longpolling-port"
+        if _version_key(version)[0] <= 15
+        else "--gevent-port"
+    )
     conf = odoo_config.parse_config(config)
     log_level = conf.get("log_level", "info")
     max_cron = conf.get("max_cron_threads")
@@ -248,7 +259,7 @@ def server_command(branch, config=None, enterprise: bool = False) -> list:
         "0.0.0.0",
         "--http-port",
         "8069",
-        "--gevent-port",
+        realtime_flag,
         "8072",
         "--log-level",
         str(log_level),

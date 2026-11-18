@@ -85,11 +85,12 @@ Control plane cannot reach `/var/run/docker.sock`: `systemctl status docker`,
 - `nginx -t` must pass; the platform rolls back invalid configs.
 - certbot failures usually mean DNS is not pointing at the server yet or
   port 80 is blocked. Fix DNS/firewall, then save the domain again to retry.
-- After setting a domain, **Deploy** the branch so the loopback gevent port
-  is published. Websockets use the gevent port only when the project's Odoo
-  config has **HTTP workers > 0**; with the default threaded server
-  (`workers = 0`) they use the main HTTP port. If you change workers, re-save
-  the domain and Deploy.
+- After setting a domain, **Deploy** the branch so the loopback realtime port
+  is published. The realtime port is used only when the project's Odoo config
+  has **HTTP workers > 0**; with the default threaded server (`workers = 0`)
+  realtime uses the main HTTP port. Odoo 15 uses longpolling
+  (`--longpolling-port`); Odoo 16+ uses websockets (`--gevent-port`).
+  If you change workers, re-save the domain and Deploy.
 - Logs: `/var/log/nginx/odoo-paas-<branch-id>.{access,error}.log`.
 
 ### Odoo container exits after a project-settings change
@@ -155,7 +156,7 @@ The Odoo version is chosen **per project** when it is created; branches copy
 it at creation. The dropdown lists every base image built on the host:
 
 ```bash
-sudo ./install.sh --odoo-versions "17.0 18.0 19.0 20.0"   # build series
+sudo ./install.sh --odoo-versions "15.0 16.0 17.0 18.0 19.0 20.0"   # build series
 sudo ./install.sh --rebuild-base --odoo-versions "20.0"   # refresh one
 ```
 
@@ -163,6 +164,8 @@ Per-series requirements (install.sh picks the base automatically):
 
 | Series | Python | PostgreSQL | Image base |
 |---|---|---|---|
+| 15.0 | 3.8–3.10 (Python 3.9) | ≥ 10 | `python:3.9-slim-bookworm` |
+| 16.0 | 3.8–3.10 (Python 3.9) | ≥ 12 | `python:3.9-slim-bookworm` |
 | 17.0, 18.0, 19.0 | 3.10–3.13 (Debian 3.11) | ≥ 13 | `debian:bookworm-slim` |
 | 20.0 | ≥ 3.12 | ≥ 16 (`any_value()`) | `python:3.12-slim-bookworm` |
 

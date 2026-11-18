@@ -32,7 +32,7 @@ sudo ./install.sh --public-host SERVER_IP \
 4. Docker network `odoo-paas`, containers `odoo-paas-pg` (docker-network
    only, no host port) and `odoo-paas-mailpit` (127.0.0.1:8025/1025)
 5. base image(s) `odoo-paas/base:<version>` — one per Odoo version
-   requested (`--odoo-versions "17.0 20.0"`; `--rebuild-base` to refresh).
+   requested (`--odoo-versions "15.0 16.0 17.0 20.0"`; `--rebuild-base` to refresh).
    Series >= 20 are built on `python:3.12-slim-bookworm` because Odoo
    requires Python >= 3.12; older series use Debian's Python 3.11.
 6. venv + `pip install -r requirements.txt`
@@ -41,7 +41,7 @@ sudo ./install.sh --public-host SERVER_IP \
 8. first admin user (only if none exists)
 
 Useful flags: `--public-host`, `--admin-email`, `--admin-password`,
-`--rebuild-base`, `--odoo-version 16.0` (single), `--odoo-versions "17.0 20.0"`
+`--rebuild-base`, `--odoo-version 16.0` (single), `--odoo-versions "15.0 16.0 17.0 20.0"`
 (several). Env equivalents: `PUBLIC_HOST`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
 `ODOO_VERSION`, `ODOO_VERSIONS`, `PORT`.
 
@@ -117,12 +117,13 @@ certbot. The generated config follows Odoo's official
 separate HTTP and websocket/gevent upstreams, `X-Forwarded-*` headers,
 HTTPS with HSTS, and `/websocket` (plus legacy `/longpolling`) forwarding.
 
-Odoo only starts the dedicated gevent/longpolling listener when **HTTP
-workers > 0** (multi-processing). With the default threaded server
-(`workers = 0`), Odoo serves websockets on the main HTTP port, and the
-generated nginx config routes `/websocket` there. If you change the project's
-HTTP workers, re-save each branch domain and Deploy so nginx switches to the
-dedicated loopback gevent port.
+Odoo only starts the dedicated realtime listener when **HTTP workers > 0**
+(multi-processing). With the default threaded server (`workers = 0`), Odoo
+serves websockets (16+) or longpolling (15) on the main HTTP port, and the
+generated nginx config routes the realtime paths there. The platform passes
+`--longpolling-port 8072` to Odoo 15 and `--gevent-port 8072` to Odoo 16+.
+If you change the project's HTTP workers, re-save each branch domain and
+Deploy so nginx switches to the dedicated loopback port.
 Certificates renew through certbot's systemd timer, with nginx reloaded by
 the deploy hook.
 
@@ -206,7 +207,7 @@ Running branch containers are not touched. New base-image content (Odoo
 security updates) needs a rebuild of the wanted versions:
 
 ```bash
-sudo ./install.sh --rebuild-base --odoo-versions "17.0 20.0"
+sudo ./install.sh --rebuild-base --odoo-versions "15.0 16.0 17.0 20.0"
 # then redeploy branches (Deploy button) to pick up the new image
 ```
 

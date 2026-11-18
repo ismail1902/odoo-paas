@@ -20,7 +20,7 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
   branch you add gets a stage (production / staging / development), a host
   port from a pool (9000–9990) and its own PostgreSQL database.
 - **Per-project Odoo version.** Pick the Odoo version when creating a
-  project (any version with a built base image, e.g. 17.0, 19.0, 20.0);
+  project (any version with a built base image, e.g. 15.0–20.0);
   every branch of the project runs that image.
 - **Optional Enterprise addons.** Add an Enterprise addons repository URL
   per project; it is cloned at the matching Odoo version branch and added

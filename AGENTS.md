@@ -123,11 +123,12 @@ There is no test suite; verify by:
 - `builds/branch-N/{repo,venv,filestore}` are the only per-branch state on
   disk besides backups; deleting a branch deletes them (`shutil.rmtree`).
 - The base image installs Odoo deps system-wide with
-  `pip --break-system-packages`; branch venvs are created
-  `--system-site-packages` and must not reinstall Odoo itself. Odoo >= 20
-  series images are built from `python:3.12-slim-bookworm` (Odoo asserts
-  Python >= 3.12) plus need PostgreSQL >= 16 (`any_value()`); older series
-  run on Debian's Python 3.11 and PostgreSQL >= 13.
+  `pip --break-system-packages` (automatically omitted on older pip);
+  branch venvs are created `--system-site-packages` and must not reinstall
+  Odoo itself. Odoo 15/16 images use `python:3.9-slim-bookworm` (Python 3.9;
+  PostgreSQL 10/12+), Odoo 17–19 use `debian:bookworm-slim` (Python 3.11;
+  PostgreSQL 13+), and Odoo >= 20 uses `python:3.12-slim-bookworm` (Python
+  >= 3.12, PostgreSQL >= 16 for `any_value()`).
 - `gitops.sync()` returns `None` when the branch has no commits yet (empty
   repo / not pushed) or when the project has no repo URL: the builder then
   deploys base Odoo, clears any stale checkout, and later builds
