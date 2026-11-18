@@ -148,6 +148,8 @@ def run_build(build_id: int) -> None:
 
         step("initializing database")
         created = docker_ctl.ensure_database(branch.db_name)
+        if docker_ctl.vector_extension_version(branch.db_name) is None:
+            log("warning: pgvector is unavailable - Odoo 19/20 AI features require it")
         configured = [
             m.strip() for m in (branch.install_modules or "").split(",") if m.strip()
         ]

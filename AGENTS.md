@@ -43,7 +43,11 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 6. **Databases are derived from names**: `paas_<project.slug>_<branch>` via
    `web._db_name()`. Don't rename a branch's DB independently or history is
    lost. A database belongs to exactly one Odoo series — never point two
-   series at the same DB.
+   series at the same DB. The shared container is
+   `pgvector/pgvector:pg16-trixie` (or `:pg16` for bookworm volumes), and
+   every branch DB must have the `vector`
+   extension (Odoo 19/20 AI): `docker_ctl.ensure_database` enables it on each
+   deploy, and `install.sh` seeds `template1` plus existing databases.
 7. **No comments unless non-obvious.** Existing style: module docstrings +
    minimal inline comments. Match it.
 

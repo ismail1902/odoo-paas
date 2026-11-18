@@ -178,12 +178,85 @@ different version. Existing databases are **not** migrated between Odoo
 series; export/import via standard Odoo upgrade tooling if ever needed, and
 never point two Odoo series at the same database.
 
+## pgvector (Odoo 19/20 AI)
+
+Odoo 19/20 AI features require PostgreSQL's `vector` extension (pgvector).
+Current installs run `odoo-paas-pg` from
+`pgvector/pgvector:pg16-trixie`; `install.sh` enables `vector` in `template1`
+(so new databases inherit it) and in every existing branch database.
+`docker_ctl.ensure_database` also re-ensures it on every deploy. The
+installer picks the `pg16` tag for glibc 2.36 (bookworm) containers and
+`pg16-trixie` otherwise; set `POSTGRES_IMAGE` to override.
+
+```bash
+cd /opt/odoo-paas
+.venv/bin/python -m app.manage doctor
+# pgvector:      0.x (available 0.x)
+
+docker exec odoo-paas-pg psql -U odoo -d postgres -tAc \
+  "select datname from pg_database where datistemplate = false" \
+  | while read -r db; do
+      printf '%s: ' "$db"
+      docker exec odoo-paas-pg psql -U odoo -d "$db" -tAc \
+        "select coalesce((select extversion from pg_extension where extname = 'vector'), 'missing')"
+    done
+```
+
+If `pg_available_extensions` has no `vector`, the container still runs plain
+`postgres:16`. Re-run `install.sh` (it safely swaps same-major images on the
+existing `odoo-paas-pgdata` volume and enables the extension), or recreate it
+manually:
+
+```bash
+docker rm -f odoo-paas-pg
+docker run -d --name odoo-paas-pg --restart unless-stopped \
+  --network odoo-paas -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$(grep -m1 '^PG_PASSWORD=' /opt/odoo-paas/.env | cut -d= -f2-)" \
+  -v odoo-paas-pgdata:/var/lib/postgresql/data pgvector/pgvector:pg16-trixie
+```
+
+### Collation version mismatch
+
+PostgreSQL records the libc collation version when a database is created. If
+the container image changes OS (bookworm/glibc 2.36 ↔ trixie/glibc 2.41),
+every connection logs:
+
+```text
+database "..." has a collation version mismatch
+```
+
+Pick the matching image tag: `pgvector/pgvector:pg16` for bookworm volumes,
+`pgvector/pgvector:pg16-trixie` for trixie volumes. Do **not** just run
+`ALTER DATABASE ... REFRESH COLLATION VERSION` on a volume that was used by
+the other libc: text indexes may have been written with a different sort
+order. The safe fix is a dump/restore into a fresh volume. Keep the same
+volume name (or set `PG_VOLUME`); `install.sh` reuses the running container's
+volume automatically:
+
+```bash
+# stop the platform and branch containers first
+docker exec odoo-paas-pg pg_dumpall -U odoo | gzip > /root/pg_dumpall.sql.gz
+# optional rollback copy of the raw volume
+docker run --rm -v odoo-paas-pgdata:/from -v odoo-paas-pgdata-old:/to \
+  alpine sh -c 'cp -a /from/. /to/'
+docker rm -f odoo-paas-pg
+docker volume rm odoo-paas-pgdata
+docker run -d --name odoo-paas-pg --restart unless-stopped \
+  --network odoo-paas -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$(grep -m1 '^PG_PASSWORD=' /opt/odoo-paas/.env | cut -d= -f2-)" \
+  -v odoo-paas-pgdata:/var/lib/postgresql/data pgvector/pgvector:pg16-trixie
+sleep 10
+zcat /root/pg_dumpall.sql.gz | docker exec -i odoo-paas-pg psql -U odoo -d postgres
+```
+
+`CREATE ROLE odoo ... already exists` and `database "odoo" already exists`
+during the restore are expected; the data still restores. Re-enable pgvector
+in `template1` and every database afterwards (see above).
+
 ## Upgrading PostgreSQL
 
 Odoo >= 20 requires PostgreSQL >= 16 (`any_value()`, and a hard check at
 startup: "Postgres version … lower than minimum required"). The platform
-container `odoo-paas-pg` is created from `postgres:16` by current installs;
-older installs used `postgres:15` for Odoo <= 19. To upgrade with data:
+container `odoo-paas-pg` is created from `pgvector/pgvector:pg16-trixie` by
+current installs; older installs used `postgres:15/16`. To upgrade with data:
 
 ```bash
 # 1. dump everything (while containers may keep running)
@@ -193,10 +266,18 @@ docker rm -f odoo-paas-pg
 docker volume create odoo-paas-pgdata16
 docker run -d --name odoo-paas-pg --restart unless-stopped \
   --network odoo-paas -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$(grep -m1 '^PG_PASSWORD=' /opt/odoo-paas/.env | cut -d= -f2-)" \
-  -v odoo-paas-pgdata16:/var/lib/postgresql/data postgres:16
+  -v odoo-paas-pgdata16:/var/lib/postgresql/data pgvector/pgvector:pg16-trixie
 # 3. wait, then restore
 sleep 10
 docker exec -i odoo-paas-pg psql -U odoo -d postgres < /root/pg_dumpall.sql
+
+# 4. ensure the extension in restored databases
+docker exec odoo-paas-pg psql -U odoo -d template1 -c "CREATE EXTENSION IF NOT EXISTS vector"
+docker exec odoo-paas-pg psql -U odoo -d postgres -tAc \
+  "select datname from pg_database where datistemplate = false" \
+  | while read -r db; do
+      docker exec odoo-paas-pg psql -U odoo -d "$db" -c "CREATE EXTENSION IF NOT EXISTS vector"
+    done
 ```
 
 Then redeploy the branches. PG 15→16 is a plain dump/restore (no

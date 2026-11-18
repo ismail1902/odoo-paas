@@ -11,9 +11,9 @@
                                       │ docker SDK / docker exec                          │
               ┌───────────────────────┼──────────────────────────────────────┐
               ▼                       ▼                                      ▼
-   odoo-paas-pg (PostgreSQL 15)  odoo-paas-mailpit              odoo-paas-branch-N ×N
-   one DB per branch              SMTP :1025, UI :8025           base image + repo/filestore/venv
-   docker-network only            network-reachable only         published 0.0.0.0:<branch port>
+   odoo-paas-pg (PG 16 + pgvector)  odoo-paas-mailpit           odoo-paas-branch-N ×N
+   one DB per branch                SMTP :1025, UI :8025         base image + repo/filestore/venv
+   docker-network only              network-reachable only       published 0.0.0.0:<branch port>
 ```
 
 - Docker network `odoo-paas` (bridge) connects Postgres, Mailpit and all
@@ -22,6 +22,11 @@
 - PostgreSQL is not published on the host at all (avoids clashes with a
   distro PostgreSQL): branch containers reach it through the Docker network,
   the platform host-side code uses `docker exec`.
+- The shared database image is `pgvector/pgvector:pg16-trixie` (PostgreSQL 16
+  plus pgvector; use `:pg16` for a bookworm/glibc 2.36 data volume). Odoo
+  19/20 AI features need the `vector` extension: the
+  installer enables it in `template1` and every existing branch database, and
+  `docker_ctl.ensure_database` re-ensures it on every deploy.
 - Branch ports come from the pool `PORT_RANGE_START..PORT_RANGE_END`
   (default 9000–9990), one per branch, published on `0.0.0.0`.
 

@@ -523,15 +523,56 @@ def database_exists(db_name: str) -> bool:
     return result.stdout.strip() == b"1"
 
 
+def ensure_vector_extension(db_name: str) -> bool:
+    """Enable pgvector (Odoo 19/20 AI features). Best-effort on legacy Postgres."""
+    if settings.MOCK_DOCKER:
+        return True
+    result = _docker_exec_pg(
+        [
+            "psql",
+            "-U",
+            settings.PG_USER,
+            "-d",
+            db_name,
+            "-q",
+            "-c",
+            "CREATE EXTENSION IF NOT EXISTS vector",
+        ]
+    )
+    return result.returncode == 0
+
+
+def vector_extension_version(db_name: str) -> Optional[str]:
+    """Installed pgvector version, or None when the extension is unavailable."""
+    if settings.MOCK_DOCKER:
+        return "mock"
+    result = _docker_exec_pg(
+        [
+            "psql",
+            "-U",
+            settings.PG_USER,
+            "-d",
+            db_name,
+            "-tAc",
+            "select extversion from pg_extension where extname = 'vector'",
+        ]
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.decode(errors="replace").strip() or None
+
+
 def ensure_database(db_name: str) -> bool:
     """Create the database if missing. Returns True when newly created."""
     if settings.MOCK_DOCKER:
         return True
     if database_exists(db_name):
+        ensure_vector_extension(db_name)
         return False
     result = _docker_exec_pg(["createdb", "-U", settings.PG_USER, db_name])
     if result.returncode != 0:
         raise BuildError(f"createdb failed: {result.stderr.decode(errors='replace')}")
+    ensure_vector_extension(db_name)
     return True
 
 

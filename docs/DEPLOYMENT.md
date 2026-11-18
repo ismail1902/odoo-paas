@@ -30,7 +30,13 @@ sudo ./install.sh --public-host SERVER_IP \
 2. repo sync to `/opt/odoo-paas` (data lives in `/var/lib/odoo-paas`)
 3. `.env` creation — random `SECRET_KEY` and `PG_PASSWORD` on first run only
 4. Docker network `odoo-paas`, containers `odoo-paas-pg` (docker-network
-   only, no host port) and `odoo-paas-mailpit` (127.0.0.1:8025/1025)
+   only, no host port) and `odoo-paas-mailpit` (127.0.0.1:8025/1025).
+   PostgreSQL runs from `pgvector/pgvector:pg16-trixie`; the installer
+   enables the `vector` extension in `template1` and every branch database.
+   Re-running the installer on an older `postgres:16` deployment swaps the
+   image in place (same major version, same `odoo-paas-pgdata` volume). The
+   `-trixie` tag matches the current `postgres:16` image (glibc 2.41); for a
+   volume created on bookworm use `POSTGRES_IMAGE=pgvector/pgvector:pg16`.
 5. base image(s) `odoo-paas/base:<version>` — one per Odoo version
    requested (`--odoo-versions "15.0 16.0 17.0 20.0"`; `--rebuild-base` to refresh).
    Series >= 20 are built on `python:3.12-slim-bookworm` because Odoo
@@ -43,7 +49,10 @@ sudo ./install.sh --public-host SERVER_IP \
 Useful flags: `--public-host`, `--admin-email`, `--admin-password`,
 `--rebuild-base`, `--odoo-version 16.0` (single), `--odoo-versions "15.0 16.0 17.0 20.0"`
 (several). Env equivalents: `PUBLIC_HOST`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
-`ODOO_VERSION`, `ODOO_VERSIONS`, `PORT`.
+`ODOO_VERSION`, `ODOO_VERSIONS`, `PORT`, `POSTGRES_IMAGE` (defaults to a
+pgvector tag matching the existing volume's libc; changing it triggers a
+same-major container swap), `PG_VOLUME` (data volume; detected from the
+running container when omitted).
 
 If you did not pass an admin password, the installer generates one and prints
 it once. Recover later with:
@@ -91,6 +100,25 @@ addons path, data directory, HTTP port/interface, init/update/tests) are
 rejected from the advanced field. Changes apply to all branches on their next
 **Deploy** or **Start**; running containers keep their current command until
 then.
+
+### AI features (Odoo 19/20)
+
+Odoo 19 and 20 AI features require the PostgreSQL
+[pgvector](https://github.com/pgvector/pgvector) extension. The platform runs
+PostgreSQL from `pgvector/pgvector:pg16-trixie` and enables `vector` in every
+branch database (and in `template1`, so newly created databases inherit it).
+Verify with:
+
+```bash
+cd /opt/odoo-paas
+.venv/bin/python -m app.manage doctor          # pgvector: 0.x (available 0.x)
+docker exec odoo-paas-pg psql -U odoo -d paas_<project>_<branch> \
+  -tAc "select extversion from pg_extension where extname = 'vector'"
+```
+
+If the host was installed before pgvector support, re-run `install.sh`; it
+pulls the pgvector image, recreates `odoo-paas-pg` on the same data volume
+(PostgreSQL 16 → 16), and enables the extension in existing databases.
 
 ### Custom domains and HTTPS
 

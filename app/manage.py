@@ -93,6 +93,23 @@ def cmd_doctor(_args) -> None:
 
         result = _docker_exec_pg(["psql", "-U", settings.PG_USER, "-d", "postgres", "-c", "SELECT 1"])
         print(f"postgres:      {'ok' if result.returncode == 0 else 'ERROR'}")
+        if result.returncode == 0:
+            vector = _docker_exec_pg(
+                [
+                    "psql",
+                    "-U",
+                    settings.PG_USER,
+                    "-d",
+                    "postgres",
+                    "-tAc",
+                    "select coalesce("
+                    "(select extversion from pg_extension where extname = 'vector'),"
+                    "'not enabled') || ' (available ' || coalesce("
+                    "(select default_version from pg_available_extensions "
+                    "where name = 'vector'),'no') || ')'",
+                ]
+            ).stdout.decode(errors="replace").strip()
+            print(f"pgvector:      {vector}")
     print(f"worker:        {'enabled' if settings.WORKER_ENABLED else 'disabled'}")
 
 
