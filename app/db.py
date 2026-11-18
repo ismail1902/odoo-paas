@@ -6,6 +6,7 @@ from typing import Iterator
 
 from sqlmodel import Session, SQLModel, create_engine, select
 
+from app import postgres
 from app.config import settings
 from app.models import User
 
@@ -80,6 +81,15 @@ def _migrate() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE project ADD COLUMN enterprise_repo_url VARCHAR DEFAULT ''"
             )
+        if "postgres_version" not in project_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE project ADD COLUMN postgres_version VARCHAR DEFAULT ''"
+            )
+        conn.exec_driver_sql(
+            "UPDATE project SET postgres_version = ? "
+            "WHERE postgres_version IS NULL OR postgres_version = ''",
+            (postgres.DEFAULT_VERSION,),
+        )
         build_columns = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(build)").fetchall()
@@ -100,6 +110,15 @@ def _migrate() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE branch ADD COLUMN domain VARCHAR DEFAULT ''"
             )
+        if "postgres_version" not in branch_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE branch ADD COLUMN postgres_version VARCHAR DEFAULT ''"
+            )
+        conn.exec_driver_sql(
+            "UPDATE branch SET postgres_version = ? "
+            "WHERE postgres_version IS NULL OR postgres_version = ''",
+            (postgres.DEFAULT_VERSION,),
+        )
 
 
 @contextmanager

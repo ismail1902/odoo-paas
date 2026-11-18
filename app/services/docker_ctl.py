@@ -2,8 +2,9 @@
 
 Topology
 --------
-- One shared Postgres container (``PG_CONTAINER``) hosts one database per
-  branch. It is only published on 127.0.0.1 by install.sh.
+- One shared Postgres container per supported PostgreSQL version hosts the
+  databases of projects that chose that version. They are reachable only on
+  the Docker network.
 - One shared bridge network (``DOCKER_NETWORK``). Build containers join it and
   reach Postgres by container name.
 - Each branch is a container running the base image (``BASE_IMAGE``) with:
@@ -21,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
-from app import odoo_config
+from app import odoo_config, postgres
 from app.config import settings
 from app.errors import BuildError
 
@@ -91,6 +92,11 @@ def enterprise_dir(branch) -> Path:
     return branch_dir(branch) / "enterprise"
 
 
+def postgres_container(record) -> str:
+    """Shared Postgres container selected by a project or branch."""
+    return postgres.container_name(postgres.version_for(record))
+
+
 def ensure_branch_dirs(branch) -> None:
     for path in (repo_dir(branch), venv_dir(branch), filestore_dir(branch), enterprise_dir(branch)):
         path.mkdir(parents=True, exist_ok=True)
@@ -138,6 +144,25 @@ def list_base_versions() -> list:
         return versions or [settings.ODOO_VERSION]
     except Exception:  # noqa: BLE001 - docker unavailable
         return [settings.ODOO_VERSION]
+
+
+def list_postgres_versions() -> list:
+    """Supported PostgreSQL versions whose shared container is running."""
+    if settings.MOCK_DOCKER:
+        return list(postgres.VERSIONS)
+    try:
+        c = client()
+    except BuildError:
+        return []
+    versions = []
+    for version in postgres.VERSIONS:
+        try:
+            container = c.containers.get(postgres.container_name(version))
+        except Exception:  # noqa: BLE001 - missing container
+            continue
+        if container.status == "running":
+            versions.append(version)
+    return versions
 
 
 def build_base_image(version: str, log: Callable[[str], None]) -> None:
@@ -212,7 +237,7 @@ def _volumes(branch) -> dict:
 
 def _env(branch) -> dict:
     return {
-        "PGHOST": settings.PG_CONTAINER,
+        "PGHOST": postgres_container(branch),
         "PGPORT": "5432",
         "PGUSER": settings.PG_USER,
         "PGPASSWORD": settings.PG_PASSWORD,
@@ -223,8 +248,22 @@ def _env(branch) -> dict:
     }
 
 
+def _has_user_addons(branch) -> bool:
+    """True when the checkout contains at least one module directory."""
+    try:
+        return any(
+            (child / "__init__.py").is_file()
+            for child in repo_dir(branch).iterdir()
+            if child.is_dir()
+        )
+    except OSError:
+        return False
+
+
 def _base_odoo_argv(branch, enterprise: bool = False) -> list:
-    addons = "/opt/odoo/addons,/mnt/user"
+    addons = "/opt/odoo/addons"
+    if _has_user_addons(branch):
+        addons += ",/mnt/user"
     if enterprise:
         addons += ",/mnt/enterprise"
     return [
@@ -498,15 +537,20 @@ def container_stats(branch) -> Optional[dict]:
 # --- Postgres helpers (host-side `docker exec`) ----------------------------------
 
 
-def _docker_exec_pg(args: list, input_bytes: Optional[bytes] = None) -> subprocess.CompletedProcess:
+def _docker_exec_pg(
+    args: list,
+    input_bytes: Optional[bytes] = None,
+    *,
+    container: Optional[str] = None,
+) -> subprocess.CompletedProcess:
     cmd = ["docker", "exec"]
     if input_bytes is not None:
         cmd.append("-i")
-    cmd += [settings.PG_CONTAINER, *args]
+    cmd += [container or settings.PG_CONTAINER, *args]
     return subprocess.run(cmd, input=input_bytes, capture_output=True)
 
 
-def database_exists(db_name: str) -> bool:
+def database_exists(db_name: str, *, container: Optional[str] = None) -> bool:
     if settings.MOCK_DOCKER:
         return False
     result = _docker_exec_pg(
@@ -518,12 +562,13 @@ def database_exists(db_name: str) -> bool:
             "postgres",
             "-tAc",
             f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'",
-        ]
+        ],
+        container=container,
     )
     return result.stdout.strip() == b"1"
 
 
-def ensure_vector_extension(db_name: str) -> bool:
+def ensure_vector_extension(db_name: str, *, container: Optional[str] = None) -> bool:
     """Enable pgvector (Odoo 19/20 AI features). Best-effort on legacy Postgres."""
     if settings.MOCK_DOCKER:
         return True
@@ -537,12 +582,15 @@ def ensure_vector_extension(db_name: str) -> bool:
             "-q",
             "-c",
             "CREATE EXTENSION IF NOT EXISTS vector",
-        ]
+        ],
+        container=container,
     )
     return result.returncode == 0
 
 
-def vector_extension_version(db_name: str) -> Optional[str]:
+def vector_extension_version(
+    db_name: str, *, container: Optional[str] = None
+) -> Optional[str]:
     """Installed pgvector version, or None when the extension is unavailable."""
     if settings.MOCK_DOCKER:
         return "mock"
@@ -555,28 +603,31 @@ def vector_extension_version(db_name: str) -> Optional[str]:
             db_name,
             "-tAc",
             "select extversion from pg_extension where extname = 'vector'",
-        ]
+        ],
+        container=container,
     )
     if result.returncode != 0:
         return None
     return result.stdout.decode(errors="replace").strip() or None
 
 
-def ensure_database(db_name: str) -> bool:
+def ensure_database(db_name: str, *, container: Optional[str] = None) -> bool:
     """Create the database if missing. Returns True when newly created."""
     if settings.MOCK_DOCKER:
         return True
-    if database_exists(db_name):
-        ensure_vector_extension(db_name)
+    if database_exists(db_name, container=container):
+        ensure_vector_extension(db_name, container=container)
         return False
-    result = _docker_exec_pg(["createdb", "-U", settings.PG_USER, db_name])
+    result = _docker_exec_pg(
+        ["createdb", "-U", settings.PG_USER, db_name], container=container
+    )
     if result.returncode != 0:
         raise BuildError(f"createdb failed: {result.stderr.decode(errors='replace')}")
-    ensure_vector_extension(db_name)
+    ensure_vector_extension(db_name, container=container)
     return True
 
 
-def database_initialized(db_name: str) -> bool:
+def database_initialized(db_name: str, *, container: Optional[str] = None) -> bool:
     """True when Odoo has initialized the database (ir_module_module exists)."""
     if settings.MOCK_DOCKER:
         return True
@@ -590,12 +641,15 @@ def database_initialized(db_name: str) -> bool:
             "-tAc",
             "select 1 from information_schema.tables "
             "where table_schema='public' and table_name='ir_module_module'",
-        ]
+        ],
+        container=container,
     )
     return result.returncode == 0 and result.stdout.strip() == b"1"
 
 
-def installed_modules(db_name: str, modules: list) -> set:
+def installed_modules(
+    db_name: str, modules: list, *, container: Optional[str] = None
+) -> set:
     """Subset of ``modules`` already installed in the database."""
     if settings.MOCK_DOCKER:
         return set(modules)
@@ -612,7 +666,8 @@ def installed_modules(db_name: str, modules: list) -> set:
             "-tAc",
             "select name from ir_module_module "
             f"where state='installed' and name in ({quoted})",
-        ]
+        ],
+        container=container,
     )
     if result.returncode != 0:
         return set()
@@ -623,7 +678,7 @@ def installed_modules(db_name: str, modules: list) -> set:
     }
 
 
-def drop_database(db_name: str) -> None:
+def drop_database(db_name: str, *, container: Optional[str] = None) -> None:
     if settings.MOCK_DOCKER:
         return
     _docker_exec_pg(
@@ -635,14 +690,20 @@ def drop_database(db_name: str) -> None:
             "postgres",
             "-c",
             f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db_name}' AND pid <> pg_backend_pid()",
-        ]
+        ],
+        container=container,
     )
-    result = _docker_exec_pg(["dropdb", "--if-exists", "-U", settings.PG_USER, db_name])
+    result = _docker_exec_pg(
+        ["dropdb", "--if-exists", "-U", settings.PG_USER, db_name],
+        container=container,
+    )
     if result.returncode != 0:
         raise BuildError(f"dropdb failed: {result.stderr.decode(errors='replace')}")
 
 
-def dump_database(db_name: str, dest: Path) -> None:
+def dump_database(
+    db_name: str, dest: Path, *, container: Optional[str] = None
+) -> None:
     if settings.MOCK_DOCKER:
         dest.write_bytes(b"[mock dump]")
         return
@@ -651,7 +712,7 @@ def dump_database(db_name: str, dest: Path) -> None:
             [
                 "docker",
                 "exec",
-                settings.PG_CONTAINER,
+                container or settings.PG_CONTAINER,
                 "pg_dump",
                 "-U",
                 settings.PG_USER,
@@ -666,18 +727,20 @@ def dump_database(db_name: str, dest: Path) -> None:
         raise BuildError(f"pg_dump failed: {result.stderr.decode(errors='replace')}")
 
 
-def restore_database(db_name: str, src: Path) -> None:
+def restore_database(
+    db_name: str, src: Path, *, container: Optional[str] = None
+) -> None:
     if settings.MOCK_DOCKER:
         return
-    drop_database(db_name)
-    ensure_database(db_name)
+    drop_database(db_name, container=container)
+    ensure_database(db_name, container=container)
     with src.open("rb") as fh:
         result = subprocess.run(
             [
                 "docker",
                 "exec",
                 "-i",
-                settings.PG_CONTAINER,
+                container or settings.PG_CONTAINER,
                 "pg_restore",
                 "-U",
                 settings.PG_USER,

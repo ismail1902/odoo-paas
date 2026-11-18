@@ -54,6 +54,7 @@ class Project(SQLModel, table=True):
     repo_url: str = ""
     enterprise_repo_url: str = ""  # optional Odoo Enterprise addons checkout
     odoo_version: str = ""  # e.g. "17.0" - picks odoo-paas/base:<version>
+    postgres_version: str = ""  # e.g. "16" - picks the shared PG container
     odoo_config: str = ""  # JSON object, see app/odoo_config.py
     webhook_secret: str = ""
     created_at: NaiveDatetime = Field(default_factory=_now)
@@ -65,6 +66,7 @@ class Branch(SQLModel, table=True):
     name: str  # git branch name
     stage: str = "development"
     odoo_version: str = ""  # copied from the project at creation time
+    postgres_version: str = ""  # copied from the project at creation time
     port: int = 0
     gevent_port: int = 0  # loopback-only port for websocket/longpolling
     domain: str = ""  # optional reverse-proxy hostname

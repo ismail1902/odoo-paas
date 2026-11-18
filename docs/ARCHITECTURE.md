@@ -11,7 +11,7 @@
                                       │ docker SDK / docker exec                          │
               ┌───────────────────────┼──────────────────────────────────────┐
               ▼                       ▼                                      ▼
-   odoo-paas-pg (PG 16 + pgvector)  odoo-paas-mailpit           odoo-paas-branch-N ×N
+   odoo-paas-pg / pg15 (pgvector)   odoo-paas-mailpit           odoo-paas-branch-N ×N
    one DB per branch                SMTP :1025, UI :8025         base image + repo/filestore/venv
    docker-network only              network-reachable only       published 0.0.0.0:<branch port>
 ```
@@ -22,11 +22,13 @@
 - PostgreSQL is not published on the host at all (avoids clashes with a
   distro PostgreSQL): branch containers reach it through the Docker network,
   the platform host-side code uses `docker exec`.
-- The shared database image is `pgvector/pgvector:pg16-trixie` (PostgreSQL 16
-  plus pgvector; use `:pg16` for a bookworm/glibc 2.36 data volume). Odoo
-  19/20 AI features need the `vector` extension: the
-  installer enables it in `template1` and every existing branch database, and
-  `docker_ctl.ensure_database` re-ensures it on every deploy.
+- One shared pgvector container per selected PostgreSQL version:
+  `odoo-paas-pg` (16) and `odoo-paas-pg15` (15), each on its own volume.
+  `Project.postgres_version` is copied to every branch and decides which
+  container receives the branch database. Odoo 19/20 AI needs the `vector`
+  extension: the installer enables it in `template1` and every existing
+  database on each container, and `docker_ctl.ensure_database` re-ensures it
+  on deploy.
 - Branch ports come from the pool `PORT_RANGE_START..PORT_RANGE_END`
   (default 9000–9990), one per branch, published on `0.0.0.0`.
 
@@ -34,9 +36,10 @@
 
 ```
 User      (email, role: admin|developer|tester)
-Project   (slug, repo_url, webhook_secret)
+Project   (slug, repo_url, webhook_secret, odoo_version, postgres_version)
 Branch    (project_id, name, stage: production|staging|development,
-           port, db_name, status, install_modules, tests_enabled, update_on_deploy)
+           odoo_version, postgres_version, port, db_name, status,
+           install_modules, tests_enabled, update_on_deploy)
 Build     (branch_id, status: queued|running|succeeded|failed, step, commit_*,
            log_path, started_at, finished_at)
 Backup    (branch_id, kind: manual|auto|update, db_path, filestore_path,
@@ -70,10 +73,12 @@ PostgreSQL volume, files under `DATA_DIR`.
    `pip install -r requirements.txt` plus, if present, every
    `<module>/requirements.txt` two levels deep (`docker_ctl.ensure_venv`).
    The base image already has Odoo core dependencies system-wide.
-4. **initializing database** — first build: `odoo-bin --no-http
-   --stop-after-init -i <install_modules|base>` (demo data on development
-   branches only; `--test-enable` when the branch has tests enabled). Later
-   builds: `-u all` only when *Update modules on deploy* is on, else skip.
+4. **initializing database** — creates the DB on the branch's PostgreSQL
+   container (`docker_ctl.postgres_container`). First build: `odoo-bin
+   --no-http --stop-after-init -i <install_modules|base>` (demo data on
+   development branches only; `--test-enable` when the branch has tests
+   enabled). Later builds: `-u all` only when *Update modules on deploy* is
+   on, else skip.
 5. **starting** — (re)create `odoo-paas-branch-N` from the shared volumes,
    `restart=unless-stopped`, then HTTP-poll `http://127.0.0.1:<port>/web/login`
    for up to 90 s.

@@ -7,6 +7,24 @@
   var openers = document.querySelectorAll("[data-open-new-project]");
   var closers = document.querySelectorAll("[data-close-new-project]");
   var slugInput = dialog.querySelector('input[name="slug"]');
+  var odooSelect = dialog.querySelector('select[name="odoo_version"]');
+  var postgresSelect = dialog.querySelector('select[name="postgres_version"]');
+
+  function syncPostgresOptions() {
+    if (!odooSelect || !postgresSelect) return;
+    var odooVersion = odooSelect.value;
+    var first = null;
+    Array.prototype.forEach.call(postgresSelect.options, function (option) {
+      var versions = (option.getAttribute("data-odoo") || "").split(/\s+/);
+      var allowed = versions.indexOf(odooVersion) !== -1;
+      option.hidden = !allowed;
+      option.style.display = allowed ? "" : "none";
+      option.disabled = !allowed;
+      if (allowed && !first) first = option;
+    });
+    var selected = postgresSelect.options[postgresSelect.selectedIndex];
+    if ((!selected || selected.disabled) && first) first.selected = true;
+  }
 
   function openDialog() {
     if (typeof dialog.showModal === "function") {
@@ -14,8 +32,12 @@
     } else {
       dialog.setAttribute("open", "");
     }
+    syncPostgresOptions();
     if (slugInput) slugInput.focus();
   }
+
+  if (odooSelect) odooSelect.addEventListener("change", syncPostgresOptions);
+  syncPostgresOptions();
 
   function closeDialog() {
     if (typeof dialog.close === "function") dialog.close();

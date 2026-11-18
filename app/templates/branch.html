@@ -17,7 +17,7 @@
   <div>
     <h1>{{ branch.name }} <span class="pill {{ branch.status }}">{{ branch.status }}</span></h1>
     <div class="muted small">
-      {{ project.slug }} · stage <strong>{{ branch.stage }}</strong> · Odoo {{ branch.odoo_version }} · port {{ branch.port }} ·
+      {{ project.slug }} · stage <strong>{{ branch.stage }}</strong> · Odoo {{ branch.odoo_version }} · PostgreSQL {{ branch.postgres_version }} · port {{ branch.port }} ·
       container {{ container_state }} ·
       <a href="http://{{ public_host }}:{{ branch.port }}" target="_blank" rel="noopener">http://{{ public_host }}:{{ branch.port }}</a>
       {% if branch.domain %} · <a href="{{ domain_url }}" target="_blank" rel="noopener">{{ domain_url }}</a>{% endif %}

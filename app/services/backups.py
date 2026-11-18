@@ -39,7 +39,11 @@ def create_backup(branch, *, kind: str = "manual", note: str = "") -> Backup:
     db_file = out / f"db-{stamp}.dump"
     fs_file = out / f"filestore-{stamp}.tgz"
 
-    docker_ctl.dump_database(branch.db_name, db_file)
+    docker_ctl.dump_database(
+        branch.db_name,
+        db_file,
+        container=docker_ctl.postgres_container(branch),
+    )
     base = docker_ctl.filestore_dir(branch)
     with tarfile.open(fs_file, "w:gz") as tar:
         if base.exists():
@@ -120,7 +124,11 @@ def restore_backup(branch, backup: Backup) -> None:
     if not db_path.exists():
         raise PlatformError("backup dump file is missing on disk")
     docker_ctl.stop_container(docker_ctl.container_name(branch))
-    docker_ctl.restore_database(branch.db_name, db_path)
+    docker_ctl.restore_database(
+        branch.db_name,
+        db_path,
+        container=docker_ctl.postgres_container(branch),
+    )
     if backup.filestore_path and Path(backup.filestore_path).exists():
         base = docker_ctl.filestore_dir(branch)
         if base.exists():

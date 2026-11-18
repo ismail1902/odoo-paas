@@ -10,6 +10,7 @@
 #   sudo ./install.sh --odoo-versions "15.0 16.0 17.0 20.0"  build several versions
 #   sudo ./install.sh --wkhtmltopdf-deb URL extra .deb for arm64 PDF reports
 #   sudo ./install.sh --acme-email you@example.com  Let's Encrypt expiry contact
+#   sudo ./install.sh --postgres-versions "15 16"   shared PG/pgvector versions
 #
 # What it does, in order:
 #   1. apt prerequisites + Docker (via get.docker.com when missing)
@@ -33,13 +34,18 @@ GEVENT_PORT_RANGE_END="${GEVENT_PORT_RANGE_END:-10990}"
 ACME_EMAIL="${ACME_EMAIL:-}"
 BASE_IMAGE="odoo-paas/base:${ODOO_VERSION}"
 PG_CONTAINER=odoo-paas-pg
+PG_CONTAINER_15="${PG_CONTAINER_15:-odoo-paas-pg15}"
 PG_VOLUME="${PG_VOLUME:-}"
 MAILPIT_CONTAINER=odoo-paas-mailpit
 NETWORK=odoo-paas
+# Shared pgvector containers provisioned for new projects. PostgreSQL 16
+# keeps the historical container/volume names; each other version gets
+# odoo-paas-pg<version> + odoo-paas-pg<version>data.
+POSTGRES_VERSIONS="${POSTGRES_VERSIONS:-15 16}"
 # pgvector's PostgreSQL 16 image serves every Odoo series and provides the
 # `vector` extension required by Odoo 19/20 AI features. Leave POSTGRES_IMAGE
 # empty to pick a tag matching the existing volume's libc (2.36 -> pg16,
-# otherwise pg16-trixie); set it to override.
+# otherwise pg16-trixie); set it to override PostgreSQL 16.
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-}"
 
 PUBLIC_HOST="${PUBLIC_HOST:-}"
@@ -56,10 +62,11 @@ while [[ $# -gt 0 ]]; do
     --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
     --rebuild-base)   REBUILD_BASE=1; shift ;;
     --odoo-versions)  ODOO_VERSIONS_ARG="$2"; shift 2 ;;
+    --postgres-versions) POSTGRES_VERSIONS="$2"; shift 2 ;;
     --wkhtmltopdf-deb) WKHTMLTOPDF_DEB="$2"; shift 2 ;;
     --acme-email)     ACME_EMAIL="$2"; shift 2 ;;
     --odoo-version)   ODOO_VERSION="$2"; BASE_IMAGE="odoo-paas/base:$2"; shift 2 ;;
-    -h|--help)        sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help)        sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -117,6 +124,7 @@ GEVENT_PORT_RANGE_END=$GEVENT_PORT_RANGE_END
 ACME_EMAIL=$ACME_EMAIL
 
 PG_CONTAINER=$PG_CONTAINER
+PG_CONTAINER_15=$PG_CONTAINER_15
 PG_USER=odoo
 PG_PASSWORD=$PG_PASSWORD
 
@@ -133,6 +141,8 @@ EOF
 else
   log "Keeping existing $ENV_FILE"
   PG_PASSWORD="$(grep -m1 '^PG_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+  grep -q '^PG_CONTAINER_15=' "$ENV_FILE" \
+    || echo "PG_CONTAINER_15=$PG_CONTAINER_15" >> "$ENV_FILE"
   [[ -n "$PUBLIC_HOST" ]] && sed -i "s|^PUBLIC_HOST=.*|PUBLIC_HOST=$PUBLIC_HOST|" "$ENV_FILE"
   if [[ -n "$ACME_EMAIL" ]]; then
     if grep -q '^ACME_EMAIL=' "$ENV_FILE"; then
@@ -157,14 +167,148 @@ postgres_major() {
   fi
 }
 
-run_pg_container() {
-  docker run -d --name "$PG_CONTAINER" --restart unless-stopped \
-    --network "$NETWORK" \
-    -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$PG_PASSWORD" \
-    -v "$PG_VOLUME":/var/lib/postgresql/data \
-    "$1" >/dev/null
+pg_container_name() {
+  case "$1" in
+    16) echo "$PG_CONTAINER" ;;
+    *)  echo "odoo-paas-pg$1" ;;
+  esac
 }
 
+pg_volume_name() {
+  local version="$1" container detected=""
+  if [[ "$version" == "16" ]]; then
+    echo "$PG_VOLUME"
+    return
+  fi
+  container="$(pg_container_name "$version")"
+  if docker container inspect "$container" >/dev/null 2>&1; then
+    detected="$(docker container inspect -f \
+      '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' \
+      "$container")"
+  fi
+  echo "${detected:-odoo-paas-pg${version}data}"
+}
+
+pg_glibc() {
+  docker exec "$1" sh -c 'ldd --version 2>/dev/null | head -n1' 2>/dev/null \
+    | grep -oE '[0-9]+\.[0-9]+' | head -n1 || true
+}
+
+pg_image_for() {
+  local version="$1" container="$2" glibc
+  if [[ "$version" == "16" && -n "$POSTGRES_IMAGE" ]]; then
+    echo "$POSTGRES_IMAGE"
+    return
+  fi
+  glibc="$(pg_glibc "$container")"
+  if [[ "$glibc" == 2.36* ]]; then
+    echo "pgvector/pgvector:pg$version"
+  else
+    echo "pgvector/pgvector:pg$version-trixie"
+  fi
+}
+
+run_pg_container() {
+  local container="$1" volume="$2" image="$3"
+  docker run -d --name "$container" --restart unless-stopped \
+    --network "$NETWORK" \
+    -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+    -v "$volume":/var/lib/postgresql/data \
+    "$image" >/dev/null
+}
+
+wait_for_pg() {
+  local container="$1"
+  for _ in $(seq 1 30); do
+    docker exec "$container" pg_isready -U odoo >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  return 1
+}
+
+ensure_pg_vector() {
+  local container="$1" db
+  if docker exec "$container" psql -U odoo -d postgres -tAc \
+       "SELECT 1 FROM pg_available_extensions WHERE name = 'vector'" | grep -qx 1; then
+    log "Enabling pgvector extension on $container"
+    docker exec "$container" psql -U odoo -d template1 -q \
+      -c "CREATE EXTENSION IF NOT EXISTS vector" >/dev/null \
+      || warn "could not enable pgvector in $container/template1"
+    while IFS= read -r db; do
+      [[ -n "$db" ]] || continue
+      docker exec "$container" psql -U odoo -d "$db" -q \
+        -c "CREATE EXTENSION IF NOT EXISTS vector" >/dev/null \
+        || warn "could not enable pgvector in $container/$db"
+    done < <(docker exec "$container" psql -U odoo -d postgres -tAc \
+               "SELECT datname FROM pg_database WHERE datistemplate = false")
+  else
+    warn "$container does not provide the pgvector extension."
+  fi
+}
+
+check_pg_collation() {
+  local container="$1" target_glibc mismatched_collations
+  target_glibc="$(pg_glibc "$container")"
+  [[ -n "$target_glibc" ]] || return 0
+  mismatched_collations="$(docker exec "$container" psql -U odoo -d postgres -tAc \
+    "SELECT DISTINCT datcollversion FROM pg_database
+     WHERE datlocprovider = 'c' AND datcollversion IS NOT NULL
+       AND datcollversion <> '$target_glibc'" 2>/dev/null || true)"
+  if [[ -n "$mismatched_collations" ]]; then
+    warn "$container has a PostgreSQL collation version mismatch ($mismatched_collations vs glibc $target_glibc)."
+    warn "Use a matching pgvector image tag or dump/restore - see docs/RUNBOOK.md."
+  fi
+}
+
+ensure_postgres() {
+  local version="$1" container volume image running_image running_major target_major
+  container="$(pg_container_name "$version")"
+  volume="$(pg_volume_name "$version")"
+  if ! docker container inspect "$container" >/dev/null 2>&1; then
+    image="$(pg_image_for "$version" "$container")"
+    if ! docker pull "$image" >/dev/null; then
+      warn "could not pull $image - PostgreSQL $version is unavailable"
+      return 0
+    fi
+    log "Starting PostgreSQL $version ($container, $image)"
+    run_pg_container "$container" "$volume" "$image"
+  else
+    docker start "$container" >/dev/null 2>&1 || true
+    image="$(pg_image_for "$version" "$container")"
+    running_image="$(docker container inspect -f '{{.Config.Image}}' "$container")"
+    if [[ "$running_image" != "$image" ]]; then
+      running_major="$(postgres_major "$running_image")"
+      target_major="$(postgres_major "$image")"
+      if [[ -n "$running_major" && "$running_major" == "$target_major" ]] \
+          && docker pull "$image" >/dev/null; then
+        log "Upgrading PostgreSQL $version: $running_image -> $image (data volume kept)"
+        docker rm -f "$container" >/dev/null
+        if ! run_pg_container "$container" "$volume" "$image" || ! wait_for_pg "$container"; then
+          warn "PostgreSQL $version failed to start; rolling back to $running_image"
+          docker rm -f "$container" >/dev/null 2>&1 || true
+          run_pg_container "$container" "$volume" "$running_image"
+          wait_for_pg "$container" || warn "PostgreSQL $version is not ready - check docker logs $container"
+        fi
+      else
+        warn "$container runs $running_image, expected $image."
+        warn "Odoo >= 20 needs PostgreSQL >= 16, and Odoo 19/20 AI needs pgvector -"
+        warn "see docs/RUNBOOK.md (Upgrading PostgreSQL)."
+      fi
+    fi
+  fi
+
+  if ! wait_for_pg "$container"; then
+    warn "PostgreSQL $version is not ready - check docker logs $container"
+    return 0
+  fi
+  docker exec "$container" psql -U odoo -d postgres -q \
+    -c "ALTER USER odoo WITH PASSWORD '$PG_PASSWORD'" >/dev/null 2>&1 \
+    || warn "could not sync PostgreSQL $version password"
+  ensure_pg_vector "$container"
+  check_pg_collation "$container"
+}
+
+# PostgreSQL 16 keeps the historical container and volume names.
 if [[ -z "$PG_VOLUME" ]] && docker container inspect "$PG_CONTAINER" >/dev/null 2>&1; then
   PG_VOLUME="$(docker container inspect -f \
     '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' \
@@ -172,50 +316,12 @@ if [[ -z "$PG_VOLUME" ]] && docker container inspect "$PG_CONTAINER" >/dev/null 
 fi
 PG_VOLUME="${PG_VOLUME:-odoo-paas-pgdata}"
 
-wait_for_pg() {
-  for _ in $(seq 1 30); do
-    docker exec "$PG_CONTAINER" pg_isready -U odoo >/dev/null 2>&1 && return 0
-    sleep 1
-  done
-  return 1
-}
-
-if ! docker container inspect "$PG_CONTAINER" >/dev/null 2>&1; then
-  [[ -n "$POSTGRES_IMAGE" ]] || POSTGRES_IMAGE="pgvector/pgvector:pg16-trixie"
-  log "Starting PostgreSQL ($PG_CONTAINER, $POSTGRES_IMAGE)"
-  run_pg_container "$POSTGRES_IMAGE"
-else
-  docker start "$PG_CONTAINER" >/dev/null 2>&1 || true
-  if [[ -z "$POSTGRES_IMAGE" ]]; then
-    running_glibc="$(docker exec "$PG_CONTAINER" sh -c 'ldd --version 2>/dev/null | head -n1' 2>/dev/null \
-      | grep -oE '[0-9]+\.[0-9]+' | head -n1 || true)"
-    if [[ "$running_glibc" == 2.36* ]]; then
-      POSTGRES_IMAGE="pgvector/pgvector:pg16"
-    else
-      POSTGRES_IMAGE="pgvector/pgvector:pg16-trixie"
-    fi
-  fi
-  running_image="$(docker container inspect -f '{{.Config.Image}}' "$PG_CONTAINER")"
-  if [[ "$running_image" != "$POSTGRES_IMAGE" ]]; then
-    running_major="$(postgres_major "$running_image")"
-    target_major="$(postgres_major "$POSTGRES_IMAGE")"
-    if [[ -n "$running_major" && "$running_major" == "$target_major" ]] \
-        && docker pull "$POSTGRES_IMAGE" >/dev/null; then
-      log "Upgrading PostgreSQL container: $running_image -> $POSTGRES_IMAGE (data volume kept)"
-      docker rm -f "$PG_CONTAINER" >/dev/null
-      if ! run_pg_container "$POSTGRES_IMAGE" || ! wait_for_pg; then
-        warn "new PostgreSQL container failed to start; rolling back to $running_image"
-        docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
-        run_pg_container "$running_image"
-        wait_for_pg || warn "PostgreSQL is not ready - check docker logs $PG_CONTAINER"
-      fi
-    else
-      warn "$PG_CONTAINER runs $running_image, expected $POSTGRES_IMAGE."
-      warn "Odoo >= 20 needs PostgreSQL >= 16, and Odoo 19/20 AI needs pgvector -"
-      warn "see docs/RUNBOOK.md (Upgrading PostgreSQL)."
-    fi
-  fi
-fi
+for pg_version in ${POSTGRES_VERSIONS//,/ }; do
+  case "$pg_version" in
+    15|16) ensure_postgres "$pg_version" ;;
+    *) warn "unsupported PostgreSQL version '$pg_version' - skipping" ;;
+  esac
+done
 
 if ! docker container inspect "$MAILPIT_CONTAINER" >/dev/null 2>&1; then
   log "Starting Mailpit (catches all outgoing mail: http://HOST:8025)"
@@ -229,50 +335,13 @@ fi
 
 # Self-heal: containers created by an older/partially failed run may not be
 # attached to the platform network (name resolution between containers).
-for name in "$PG_CONTAINER" "$MAILPIT_CONTAINER"; do
+for name in "$MAILPIT_CONTAINER"; do
   docker network connect "$NETWORK" "$name" >/dev/null 2>&1 || true
 done
-
-# Wait for PostgreSQL, then keep the 'odoo' role password in sync with .env
-# (idempotent; also makes password rotation a matter of editing .env).
-wait_for_pg || warn "PostgreSQL is not ready - check docker logs $PG_CONTAINER"
-docker exec "$PG_CONTAINER" psql -U odoo -d postgres -q \
-  -c "ALTER USER odoo WITH PASSWORD '$PG_PASSWORD'" >/dev/null 2>&1 \
-  || warn "could not sync PostgreSQL password (container not ready?)"
-
-# pgvector is required by Odoo 19/20 AI features. Enable it in template1 so
-# every future branch database inherits it, and in every existing database.
-if docker exec "$PG_CONTAINER" psql -U odoo -d postgres -tAc \
-     "SELECT 1 FROM pg_available_extensions WHERE name = 'vector'" | grep -qx 1; then
-  log "Enabling pgvector extension for Odoo AI features"
-  docker exec "$PG_CONTAINER" psql -U odoo -d template1 -q \
-    -c "CREATE EXTENSION IF NOT EXISTS vector" >/dev/null \
-    || warn "could not enable pgvector in template1"
-  while IFS= read -r db; do
-    [[ -n "$db" ]] || continue
-    docker exec "$PG_CONTAINER" psql -U odoo -d "$db" -q \
-      -c "CREATE EXTENSION IF NOT EXISTS vector" >/dev/null \
-      || warn "could not enable pgvector in $db"
-  done < <(docker exec "$PG_CONTAINER" psql -U odoo -d postgres -tAc \
-             "SELECT datname FROM pg_database WHERE datistemplate = false")
-else
-  warn "$POSTGRES_IMAGE does not provide the pgvector extension."
-  warn "Odoo 19/20 AI features require it; see docs/RUNBOOK.md."
-fi
-
-target_glibc="$(docker exec "$PG_CONTAINER" sh -c 'ldd --version 2>/dev/null | head -n1' 2>/dev/null \
-  | grep -oE '[0-9]+\.[0-9]+' | head -n1 || true)"
-if [[ -n "$target_glibc" ]]; then
-  mismatched_collations="$(docker exec "$PG_CONTAINER" psql -U odoo -d postgres -tAc \
-    "SELECT DISTINCT datcollversion FROM pg_database
-     WHERE datlocprovider = 'c' AND datcollversion IS NOT NULL
-       AND datcollversion <> '$target_glibc'" 2>/dev/null || true)"
-  if [[ -n "$mismatched_collations" ]]; then
-    warn "PostgreSQL collation version mismatch ($mismatched_collations vs glibc $target_glibc)."
-    warn "Use a matching pgvector image tag (pg16 vs pg16-trixie) or dump/restore -"
-    warn "see docs/RUNBOOK.md (Collation version mismatch)."
-  fi
-fi
+for pg_version in ${POSTGRES_VERSIONS//,/ }; do
+  docker network connect "$NETWORK" "$(pg_container_name "$pg_version")" \
+    >/dev/null 2>&1 || true
+done
 
 # ------------------------------------------------------------------ 5. base image
 BUILD_VERSIONS="${ODOO_VERSIONS_ARG:-$ODOO_VERSION}"

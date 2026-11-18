@@ -91,7 +91,9 @@ missing) and from git (`.gitignore`).
 - [ ] `.env` mode 600, owned by root (install.sh does this).
 - [ ] Keep the host patched; `sudo ./install.sh --rebuild-base` for Odoo
       security releases, then redeploy branches.
-- [ ] Back up `odoo-paas-pgdata` volume + `/var/lib/odoo-paas/backups` off
-      the server (the platform does not do off-site backups). Example cron:
-      `0 3 * * * docker exec odoo-paas-pg pg_dumpall -U odoo | gzip > /root/pg-$(date +\%F).sql.gz`
+- [ ] Back up each PostgreSQL volume (`odoo-paas-pgdata`,
+      `odoo-paas-pg15data`) + `/var/lib/odoo-paas/backups` off the server (the
+      platform does not do off-site backups). Example cron:
+      `0 3 * * * docker exec odoo-paas-pg pg_dumpall -U odoo | gzip > /root/pg16-$(date +\%F).sql.gz`
+      and the same with `odoo-paas-pg15` / `pg15-...`.
 - [ ] Optional: fail2ban on sshd; disable root password SSH in favour of keys.

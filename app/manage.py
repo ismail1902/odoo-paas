@@ -16,6 +16,7 @@ import sys
 
 from sqlmodel import select
 
+from app import postgres
 from app.auth import hash_password
 from app.config import settings
 from app.db import init_db, session_scope
@@ -91,9 +92,19 @@ def cmd_doctor(_args) -> None:
     if not settings.MOCK_DOCKER:
         from app.services.docker_ctl import _docker_exec_pg
 
-        result = _docker_exec_pg(["psql", "-U", settings.PG_USER, "-d", "postgres", "-c", "SELECT 1"])
-        print(f"postgres:      {'ok' if result.returncode == 0 else 'ERROR'}")
-        if result.returncode == 0:
+        for version in postgres.VERSIONS:
+            container = postgres.container_name(version)
+            state = docker_ctl.container_state(container)
+            if state != "running":
+                print(f"postgres {version}:   {state} ({container})")
+                continue
+            result = _docker_exec_pg(
+                ["psql", "-U", settings.PG_USER, "-d", "postgres", "-c", "SELECT 1"],
+                container=container,
+            )
+            if result.returncode != 0:
+                print(f"postgres {version}:   ERROR ({container})")
+                continue
             vector = _docker_exec_pg(
                 [
                     "psql",
@@ -102,14 +113,11 @@ def cmd_doctor(_args) -> None:
                     "-d",
                     "postgres",
                     "-tAc",
-                    "select coalesce("
-                    "(select extversion from pg_extension where extname = 'vector'),"
-                    "'not enabled') || ' (available ' || coalesce("
-                    "(select default_version from pg_available_extensions "
-                    "where name = 'vector'),'no') || ')'",
-                ]
+                    "select extversion from pg_extension where extname = 'vector'",
+                ],
+                container=container,
             ).stdout.decode(errors="replace").strip()
-            print(f"pgvector:      {vector}")
+            print(f"postgres {version}:   ok, pgvector {vector or 'missing'} ({container})")
     print(f"worker:        {'enabled' if settings.WORKER_ENABLED else 'disabled'}")
 
 

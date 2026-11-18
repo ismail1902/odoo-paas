@@ -147,8 +147,13 @@ def run_build(build_id: int) -> None:
             raise BuildError(f"pip install failed (exit code {code})")
 
         step("initializing database")
-        created = docker_ctl.ensure_database(branch.db_name)
-        if docker_ctl.vector_extension_version(branch.db_name) is None:
+        pg_container = docker_ctl.postgres_container(branch)
+        log(f"database {branch.db_name} on {pg_container}")
+        created = docker_ctl.ensure_database(branch.db_name, container=pg_container)
+        if (
+            docker_ctl.vector_extension_version(branch.db_name, container=pg_container)
+            is None
+        ):
             log("warning: pgvector is unavailable - Odoo 19/20 AI features require it")
         configured = [
             m.strip() for m in (branch.install_modules or "").split(",") if m.strip()
@@ -157,7 +162,9 @@ def run_build(build_id: int) -> None:
         # Only the configured modules are tested - never the whole base/web
         # suite (its PDF/barcode/font tests need tooling the image may lack).
         run_tests = branch.stage == "development" and branch.tests_enabled and bool(configured)
-        if created or not docker_ctl.database_initialized(branch.db_name):
+        if created or not docker_ctl.database_initialized(
+            branch.db_name, container=pg_container
+        ):
             if not created:
                 log("database exists but was never initialized - initializing now")
             modules = branch.install_modules or "base"
@@ -189,7 +196,9 @@ def run_build(build_id: int) -> None:
         else:
             missing = []
             if configured and not repo_empty:
-                installed = docker_ctl.installed_modules(branch.db_name, configured)
+                installed = docker_ctl.installed_modules(
+                    branch.db_name, configured, container=pg_container
+                )
                 missing = [m for m in configured if m not in installed]
             if missing:
                 log(f"installing new module(s): {', '.join(missing)}")

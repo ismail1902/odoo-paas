@@ -6,8 +6,8 @@ changing anything; it encodes the invariants that keep the platform working.
 ## What this is
 
 A self-hosted mini-Odoo.sh: one Ubuntu server runs a FastAPI+HTMX control
-plane that manages Odoo branch containers (Docker), a shared PostgreSQL and
-Mailpit. See `docs/ARCHITECTURE.md` for topology. `README.md` has the user
+plane that manages Odoo branch containers (Docker), shared PostgreSQL
+containers and Mailpit. See `docs/ARCHITECTURE.md` for topology. `README.md` has the user
 guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 
 ## Golden rules
@@ -42,12 +42,16 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    `docker_ctl.build_base_image`, so they are serialized too.
 6. **Databases are derived from names**: `paas_<project.slug>_<branch>` via
    `web._db_name()`. Don't rename a branch's DB independently or history is
-   lost. A database belongs to exactly one Odoo series — never point two
-   series at the same DB. The shared container is
-   `pgvector/pgvector:pg16-trixie` (or `:pg16` for bookworm volumes), and
-   every branch DB must have the `vector`
-   extension (Odoo 19/20 AI): `docker_ctl.ensure_database` enables it on each
-   deploy, and `install.sh` seeds `template1` plus existing databases.
+   lost. A database belongs to exactly one Odoo series and one PostgreSQL
+   container — never point two series at the same DB or move a DB between
+   containers. `Project.postgres_version` is copied to every branch; container
+   names are resolved only through `docker_ctl.postgres_container()`
+   (PostgreSQL 16 → `odoo-paas-pg`/`odoo-paas-pgdata`, PostgreSQL 15 →
+   `odoo-paas-pg15`/`odoo-paas-pg15data`). Every DB helper must receive
+   `container=docker_ctl.postgres_container(branch)`. Compatibility lives in
+   `app/postgres.py` and filters the New project dropdown. Every branch DB
+   needs the `vector` extension for Odoo 19/20 AI; `ensure_database` enables
+   it per container and `install.sh` seeds `template1` plus existing DBs.
 7. **No comments unless non-obvious.** Existing style: module docstrings +
    minimal inline comments. Match it.
 
@@ -60,6 +64,7 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/api.py` | webhook, `/healthz`, `/api/monitor`, WS logs/shell |
 | `app/models.py` | SQLModel tables + status constants (`BUILD_*`, `STAGES`, `ROLES`) |
 | `app/odoo_config.py` | curated Odoo server options, JSON/config validation, CLI args |
+| `app/postgres.py` | supported PostgreSQL/pgvector versions and Odoo compatibility |
 | `app/auth.py` | PBKDF2 hashing, signed-cookie sessions, `has_role`, `can_open_shell` |
 | `app/ports.py` | port pool allocation (persisted on Branch, OS bind test) |
 | `app/worker.py` | build claim loop, stale-build recovery, hourly retention |
@@ -133,6 +138,9 @@ There is no test suite; verify by:
   PostgreSQL 10/12+), Odoo 17–19 use `debian:bookworm-slim` (Python 3.11;
   PostgreSQL 13+), and Odoo >= 20 uses `python:3.12-slim-bookworm` (Python
   >= 3.12, PostgreSQL >= 16 for `any_value()`).
+- `docker_ctl._base_odoo_argv` adds `/mnt/user` only when the checkout
+  contains a module directory (`<dir>/__init__.py`); Odoo 15/16 reject an
+  empty addons path. Enterprise is added separately when configured.
 - `gitops.sync()` returns `None` when the branch has no commits yet (empty
   repo / not pushed) or when the project has no repo URL: the builder then
   deploys base Odoo, clears any stale checkout, and later builds

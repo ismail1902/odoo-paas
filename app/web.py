@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from app import odoo_config
+from app import odoo_config, postgres
 from app.auth import (
     can_open_shell,
     current_user,
@@ -178,6 +178,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
                 "running": sum(1 for b in branches if b.status == "running"),
                 "repo_display": _redact_url(project.repo_url),
                 "enterprise": bool((project.enterprise_repo_url or "").strip()),
+                "postgres_version": postgres.version_for(project),
             }
         )
     totals = {
@@ -193,6 +194,11 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         {"event": event, "project": projects_by_id.get(event.project_id)}
         for event in events
     ]
+    odoo_versions = docker_ctl.list_base_versions()
+    available_postgres = docker_ctl.list_postgres_versions()
+    default_postgres_version = postgres.default_version(
+        settings.ODOO_VERSION, available_postgres
+    )
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -202,8 +208,10 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             rows=rows,
             totals=totals,
             activity=activity,
-            odoo_versions=docker_ctl.list_base_versions(),
+            odoo_versions=odoo_versions,
+            postgres_versions=postgres.options(odoo_versions, available_postgres),
             default_odoo_version=settings.ODOO_VERSION,
+            default_postgres_version=default_postgres_version,
         ),
     )
 
@@ -216,6 +224,7 @@ def create_project(
     repo_url: str = Form(""),
     enterprise_repo_url: str = Form(""),
     odoo_version: str = Form(""),
+    postgres_version: str = Form(""),
     session: Session = Depends(get_session),
 ):
     user, redirect = _page_user(request, session)
@@ -235,12 +244,34 @@ def create_project(
             f"(built: {', '.join(versions)}). Build it with "
             f"install.sh --odoo-versions '{odoo_version}'",
         )
+    available_postgres = docker_ctl.list_postgres_versions()
+    pg_version = (postgres_version or "").strip()
+    if not pg_version:
+        pg_version = postgres.default_version(odoo_version, available_postgres)
+    if pg_version not in postgres.VERSIONS:
+        return _back("/", f"Unknown PostgreSQL version '{pg_version}'")
+    if pg_version not in available_postgres:
+        return _back(
+            "/",
+            f"PostgreSQL {pg_version} is not provisioned on this server "
+            f"(available: {', '.join(available_postgres) or 'none'}). "
+            "Provision it with install.sh --postgres-versions "
+            f"'{pg_version}'",
+        )
+    if not postgres.is_compatible(pg_version, odoo_version):
+        compatible = ", ".join(postgres.compatible_versions(odoo_version)) or "none"
+        return _back(
+            "/",
+            f"PostgreSQL {pg_version} is not compatible with Odoo {odoo_version} "
+            f"(compatible: {compatible})",
+        )
     project = Project(
         slug=slug,
         display_name=display_name or slug,
         repo_url=repo_url.strip(),
         enterprise_repo_url=enterprise_repo_url.strip(),
         odoo_version=odoo_version,
+        postgres_version=pg_version,
         webhook_secret=secrets.token_hex(24),
     )
     session.add(project)
@@ -265,6 +296,7 @@ def project_settings_page(
             request,
             user,
             project=project,
+            postgres_version=postgres.version_for(project),
             config=odoo_config.parse_config(project.odoo_config),
             config_groups=odoo_config.CONFIG_GROUPS,
         ),
@@ -370,6 +402,7 @@ def project_page(project_id: int, request: Request, session: Session = Depends(g
             request,
             user,
             project=project,
+            postgres_version=postgres.version_for(project),
             repo_display=_redact_url(project.repo_url),
             enterprise=bool((project.enterprise_repo_url or "").strip()),
             grouped=grouped,
@@ -414,6 +447,7 @@ def create_branch(
         name=name,
         stage=stage,
         odoo_version=project.odoo_version or settings.ODOO_VERSION,
+        postgres_version=postgres.version_for(project),
         port=port,
         db_name=_db_name(project, name),
         status="new",
@@ -425,7 +459,15 @@ def create_branch(
         Build(branch_id=branch.id, status=BUILD_QUEUED, step="queued", commit_message="initial build")
     )
     session.add(
-        Event(project_id=project_id, branch_id=branch.id, kind="info", message=f"Branch '{name}' created at stage {stage} (port {port})")
+        Event(
+            project_id=project_id,
+            branch_id=branch.id,
+            kind="info",
+            message=(
+                f"Branch '{name}' created at stage {stage} "
+                f"(port {port}, PostgreSQL {branch.postgres_version})"
+            ),
+        )
     )
     session.commit()
     return _back(f"/projects/{project_id}", f"Branch '{name}' created - build queued")
@@ -732,7 +774,9 @@ def delete_branch(
         pass
     docker_ctl.remove_container(branch.container_name)
     try:
-        docker_ctl.drop_database(branch.db_name)
+        docker_ctl.drop_database(
+            branch.db_name, container=docker_ctl.postgres_container(branch)
+        )
     except Exception:  # noqa: BLE001
         pass
     for backup in session.exec(select(Backup).where(Backup.branch_id == branch_id)).all():

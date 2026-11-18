@@ -170,7 +170,8 @@ Per-series requirements (install.sh picks the base automatically):
 | 20.0 | ≥ 3.12 | ≥ 16 (`any_value()`) | `python:3.12-slim-bookworm` |
 
 The shared `odoo-paas-pg` container runs PostgreSQL 16, which satisfies all
-supported series.
+supported series; `odoo-paas-pg15` runs PostgreSQL 15 for projects that
+choose it (Odoo 15–19).
 
 If a project's base image was removed, deploys fail with "Base image for
 Odoo X is not built on this host" — rebuild it or create the project on a
@@ -178,20 +179,43 @@ different version. Existing databases are **not** migrated between Odoo
 series; export/import via standard Odoo upgrade tooling if ever needed, and
 never point two Odoo series at the same database.
 
+## PostgreSQL containers and project choices
+
+Each project chooses a PostgreSQL/pgvector version at creation; every branch
+copies it. The platform provisions one shared container per version:
+
+| PG | Container | Volume | Image |
+|---|---|---|---|
+| 16 | `odoo-paas-pg` | `odoo-paas-pgdata` | `pgvector/pgvector:pg16-trixie` |
+| 15 | `odoo-paas-pg15` | `odoo-paas-pg15data` | `pgvector/pgvector:pg15-trixie` |
+
+Compatible Odoo versions: PostgreSQL 15/16 for Odoo 15–19, PostgreSQL 16 only
+for Odoo 20. The New project dropdown hides PG versions whose container is
+not running. Provision both with:
+
+```bash
+sudo ./install.sh --postgres-versions "15 16"
+```
+
+A branch database lives in exactly one container. It is never moved between
+PostgreSQL versions; create a new project to use a different version. Dumps,
+restores and deletions use `docker_ctl.postgres_container(branch)`, so keep
+the `Project.postgres_version` / `Branch.postgres_version` fields intact.
+
 ## pgvector (Odoo 19/20 AI)
 
 Odoo 19/20 AI features require PostgreSQL's `vector` extension (pgvector).
-Current installs run `odoo-paas-pg` from
-`pgvector/pgvector:pg16-trixie`; `install.sh` enables `vector` in `template1`
-(so new databases inherit it) and in every existing branch database.
-`docker_ctl.ensure_database` also re-ensures it on every deploy. The
-installer picks the `pg16` tag for glibc 2.36 (bookworm) containers and
-`pg16-trixie` otherwise; set `POSTGRES_IMAGE` to override.
+Both shared containers run pgvector images; `install.sh` enables `vector` in
+`template1` (so new databases inherit it) and in every existing database of
+each container. `docker_ctl.ensure_database` also re-ensures it on every
+deploy. The installer picks the `pg16`/`pg15` tag for glibc 2.36 (bookworm)
+containers and `-trixie` otherwise; set `POSTGRES_IMAGE` to override PG16.
 
 ```bash
 cd /opt/odoo-paas
 .venv/bin/python -m app.manage doctor
-# pgvector:      0.x (available 0.x)
+# postgres 16:   ok, pgvector 0.x (odoo-paas-pg)
+# postgres 15:   ok, pgvector 0.x (odoo-paas-pg15)
 
 docker exec odoo-paas-pg psql -U odoo -d postgres -tAc \
   "select datname from pg_database where datistemplate = false" \
@@ -202,10 +226,10 @@ docker exec odoo-paas-pg psql -U odoo -d postgres -tAc \
     done
 ```
 
+Use `odoo-paas-pg15` instead of `odoo-paas-pg` to inspect the PG15 container.
 If `pg_available_extensions` has no `vector`, the container still runs plain
-`postgres:16`. Re-run `install.sh` (it safely swaps same-major images on the
-existing `odoo-paas-pgdata` volume and enables the extension), or recreate it
-manually:
+`postgres`. Re-run `install.sh` (it safely swaps same-major images on the
+existing volume and enables the extension), or recreate it manually:
 
 ```bash
 docker rm -f odoo-paas-pg
@@ -225,7 +249,8 @@ database "..." has a collation version mismatch
 ```
 
 Pick the matching image tag: `pgvector/pgvector:pg16` for bookworm volumes,
-`pgvector/pgvector:pg16-trixie` for trixie volumes. Do **not** just run
+`pgvector/pgvector:pg16-trixie` for trixie volumes (use `pg15` / `pg15-trixie`
+for the PG15 container). Do **not** just run
 `ALTER DATABASE ... REFRESH COLLATION VERSION` on a volume that was used by
 the other libc: text indexes may have been written with a different sort
 order. The safe fix is a dump/restore into a fresh volume. Keep the same
@@ -251,12 +276,14 @@ zcat /root/pg_dumpall.sql.gz | docker exec -i odoo-paas-pg psql -U odoo -d postg
 during the restore are expected; the data still restores. Re-enable pgvector
 in `template1` and every database afterwards (see above).
 
-## Upgrading PostgreSQL
+## Upgrading the PostgreSQL 16 container
 
 Odoo >= 20 requires PostgreSQL >= 16 (`any_value()`, and a hard check at
 startup: "Postgres version … lower than minimum required"). The platform
 container `odoo-paas-pg` is created from `pgvector/pgvector:pg16-trixie` by
-current installs; older installs used `postgres:15/16`. To upgrade with data:
+current installs; older installs used `postgres:15/16`. The separate
+`odoo-paas-pg15` container is intentionally PostgreSQL 15 and is not upgraded
+by this procedure. To upgrade the PG16 container with data:
 
 ```bash
 # 1. dump everything (while containers may keep running)
@@ -280,9 +307,14 @@ docker exec odoo-paas-pg psql -U odoo -d postgres -tAc \
     done
 ```
 
-Then redeploy the branches. PG 15→16 is a plain dump/restore (no
+Then redeploy the PG16 branches. PG 15→16 is a plain dump/restore (no
 `pg_upgrade` needed at this scale). If anything goes wrong, remove the new
 container/volume and start `odoo-paas-pg` from the old `odoo-paas-pgdata`.
+
+To move a project from PG15 to PG16, create a new project on PG16 and restore
+its branch dumps into the new project's databases. Do not edit
+`Branch.postgres_version` in place: the branch metadata and its database must
+stay on the same container.
 
 ## Log locations
 
@@ -291,5 +323,6 @@ container/volume and start `odoo-paas-pg` from the old `odoo-paas-pgdata`.
 | Build logs (host) | `/var/lib/odoo-paas/logs/build-<id>.log` |
 | Odoo server logs | `docker logs odoo-paas-branch-<id>` |
 | Platform service logs | `journalctl -u odoo-paas -f` |
-| PostgreSQL | `docker logs odoo-paas-pg` |
+| PostgreSQL 16 | `docker logs odoo-paas-pg` |
+| PostgreSQL 15 | `docker logs odoo-paas-pg15` |
 | Mailpit UI | `http://127.0.0.1:8025` (tunnel) |

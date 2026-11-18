@@ -8,7 +8,7 @@ termination required), operated through a small web UI plus a JSON API.
 
 ```
 Browser ──► control plane (FastAPI + HTMX) ──► Docker
-                │  http://SERVER:8000           ├─ odoo-paas-pg        (shared PostgreSQL + pgvector)
+                │  http://SERVER:8000           ├─ odoo-paas-pg/pg15   (shared PostgreSQL + pgvector)
                 │                               ├─ odoo-paas-mailpit  (catches all outgoing mail)
                 └─ SQLite state, build worker   └─ odoo-paas-branch-N  (one per branch)
                                                    http://SERVER:9000+ ─► Odoo
@@ -19,13 +19,15 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
 - **Projects → branches → builds.** A project wraps a Git repository; every
   branch you add gets a stage (production / staging / development), a host
   port from a pool (9000–9990) and its own PostgreSQL database.
-- **Per-project Odoo version.** Pick the Odoo version when creating a
-  project (any version with a built base image, e.g. 15.0–20.0);
-  every branch of the project runs that image.
-- **AI-ready for Odoo 19/20.** The shared PostgreSQL image includes
+- **Per-project Odoo and PostgreSQL versions.** Pick the Odoo version
+  (any version with a built base image, e.g. 15.0–20.0) and a compatible
+  PostgreSQL/pgvector version when creating a project; every branch copies
+  both choices. The dropdown only offers valid combinations
+  (PostgreSQL 15/16 for Odoo 15–19, PostgreSQL 16 for Odoo 20).
+- **AI-ready for Odoo 19/20.** The shared PostgreSQL images include
   [pgvector](https://github.com/pgvector/pgvector); the `vector` extension is
   enabled in every branch database (and in `template1`, so new databases
-  inherit it).
+  inherit it) on the project's chosen PostgreSQL container.
 - **Optional Enterprise addons.** Add an Enterprise addons repository URL
   per project; it is cloned at the matching Odoo version branch and added
   to the Odoo addons path.

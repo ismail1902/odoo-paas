@@ -6,6 +6,7 @@
     <h1>Project settings</h1>
     <div class="muted small">
       {{ project.display_name }} · {{ project.slug }} · Odoo {{ project.odoo_version or 'default' }}
+      · PostgreSQL {{ postgres_version }} (pgvector)
     </div>
   </div>
   <a class="button" href="/projects/{{ project.id }}">← Back to project</a>
@@ -36,6 +37,18 @@
       <h4>Private repositories</h4>
       {% include "partials/private_repo_help.html" %}
     </div>
+  </div>
+
+  <div class="card">
+    <h3>Database</h3>
+    <label>PostgreSQL version
+      <input value="PostgreSQL {{ postgres_version }} (pgvector)" disabled>
+    </label>
+    <p class="muted small">
+      Chosen when the project was created and copied to every branch. Branch
+      databases are not moved between PostgreSQL versions; create a new project
+      to use another version.
+    </p>
   </div>
 
   <div class="card">
