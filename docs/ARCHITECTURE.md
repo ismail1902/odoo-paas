@@ -11,7 +11,7 @@
                                       │ docker SDK / docker exec                          │
               ┌───────────────────────┼──────────────────────────────────────┐
               ▼                       ▼                                      ▼
-   odoo-paas-pg / pg15 (pgvector)   odoo-paas-mailpit           odoo-paas-branch-N ×N
+   odoo-paas-pg (PG 15–18)         odoo-paas-mailpit           odoo-paas-branch-N ×N
    one DB per branch                SMTP :1025, UI :8025         base image + repo/filestore/venv
    docker-network only              network-reachable only       published 0.0.0.0:<branch port>
 ```
@@ -23,12 +23,14 @@
   distro PostgreSQL): branch containers reach it through the Docker network,
   the platform host-side code uses `docker exec`.
 - One shared pgvector container per selected PostgreSQL version:
-  `odoo-paas-pg` (16) and `odoo-paas-pg15` (15), each on its own volume.
-  `Project.postgres_version` is copied to every branch and decides which
-  container receives the branch database. Odoo 19/20 AI needs the `vector`
-  extension: the installer enables it in `template1` and every existing
-  database on each container, and `docker_ctl.ensure_database` re-ensures it
-  on deploy.
+  `odoo-paas-pg` (16), `odoo-paas-pg15`, `odoo-paas-pg17` and
+  `odoo-paas-pg18`, each on its own volume. PostgreSQL 18 mounts the volume at
+  `/var/lib/postgresql` (its PGDATA is the versioned subdirectory); 15–17 use
+  `/var/lib/postgresql/data`. `Project.postgres_version` is copied to every
+  branch and decides which container receives the branch database. Odoo
+  19/20 AI needs the `vector` extension: the installer enables it in
+  `template1` and every existing database on each container, and
+  `docker_ctl.ensure_database` re-ensures it on deploy.
 - Branch ports come from the pool `PORT_RANGE_START..PORT_RANGE_END`
   (default 9000–9990), one per branch, published on `0.0.0.0`.
 

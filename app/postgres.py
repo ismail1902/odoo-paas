@@ -3,21 +3,25 @@
 All supported versions use pgvector images so Odoo 19/20 AI can create the
 ``vector`` extension. The shared containers and volumes are provisioned by
 ``install.sh``; the platform never moves a branch database between versions.
+Every Odoo version 15–20 was tested against PostgreSQL 17 and 18 with base,
+mail, common business modules, an update and a web login.
 """
 from __future__ import annotations
 
 from app.config import settings
 
 # Newest first. Add a version here only after provisioning its container.
-VERSIONS = ("16", "15")
+VERSIONS = ("18", "17", "16", "15")
 
 DEFAULT_VERSION = "16"
 
-# Inclusive Odoo major range. PostgreSQL 15/16 meet every supported Odoo
-# minimum; Odoo 20 requires PostgreSQL 16 or newer.
+# Inclusive Odoo major range. All four versions meet the documented Odoo
+# minimums; Odoo 20 requires PostgreSQL 16+. PG15 is not offered for Odoo 20.
 ODOO_COMPATIBILITY = {
     "15": (15, 19),
     "16": (15, 99),
+    "17": (15, 99),
+    "18": (15, 99),
 }
 
 
@@ -56,11 +60,13 @@ def version_for(record) -> str:
 
 def container_name(version: str) -> str:
     version = normalize(version)
+    if version == "18":
+        return settings.PG_CONTAINER_18
+    if version == "17":
+        return settings.PG_CONTAINER_17
     if version == "16":
         return settings.PG_CONTAINER
-    if version == "15":
-        return settings.PG_CONTAINER_15
-    return f"odoo-paas-pg{version}"
+    return settings.PG_CONTAINER_15
 
 
 def label(version: str) -> str:
@@ -68,6 +74,8 @@ def label(version: str) -> str:
 
 
 def default_version(odoo_version: str, available: list) -> str:
+    if DEFAULT_VERSION in available and is_compatible(DEFAULT_VERSION, odoo_version):
+        return DEFAULT_VERSION
     for version in VERSIONS:
         if version in available and is_compatible(version, odoo_version):
             return version

@@ -30,15 +30,16 @@ sudo ./install.sh --public-host SERVER_IP \
 2. repo sync to `/opt/odoo-paas` (data lives in `/var/lib/odoo-paas`)
 3. `.env` creation — random `SECRET_KEY` and `PG_PASSWORD` on first run only
 4. Docker network `odoo-paas`, shared pgvector containers and
-   `odoo-paas-mailpit` (127.0.0.1:8025/1025). `--postgres-versions "15 16"`
-   (the default) provisions `odoo-paas-pg` (PostgreSQL 16) and
-   `odoo-paas-pg15` (PostgreSQL 15), each on its own data volume. The
-   installer enables the `vector` extension in `template1` and every branch
-   database of each container. Re-running the installer on an older
-   `postgres:16` deployment swaps the PG16 image in place (same major
-   version, same volume); the `-trixie` tags match the current
-   `postgres:16` image (glibc 2.41), while a volume created on bookworm can
-   use `POSTGRES_IMAGE=pgvector/pgvector:pg16`.
+   `odoo-paas-mailpit` (127.0.0.1:8025/1025). `--postgres-versions "15 16 17 18"`
+   (the default) provisions `odoo-paas-pg`, `odoo-paas-pg15`,
+   `odoo-paas-pg17` and `odoo-paas-pg18`, each on its own data volume.
+   PostgreSQL 18 mounts `/var/lib/postgresql` (its PGDATA is versioned);
+   PostgreSQL 15–17 use `/var/lib/postgresql/data`. The installer enables the
+   `vector` extension in `template1` and every branch database of each
+   container. Re-running the installer on an older `postgres:16` deployment
+   swaps the PG16 image in place (same major version, same volume); the
+   `-trixie` tags match the current `postgres:16` image (glibc 2.41), while a
+   volume created on bookworm can use `POSTGRES_IMAGE=pgvector/pgvector:pg16`.
 5. base image(s) `odoo-paas/base:<version>` — one per Odoo version
    requested (`--odoo-versions "15.0 16.0 17.0 20.0"`; `--rebuild-base` to refresh).
    Series >= 20 are built on `python:3.12-slim-bookworm` because Odoo
@@ -50,13 +51,14 @@ sudo ./install.sh --public-host SERVER_IP \
 
 Useful flags: `--public-host`, `--admin-email`, `--admin-password`,
 `--rebuild-base`, `--odoo-version 16.0` (single), `--odoo-versions "15.0 16.0 17.0 20.0"`
-(several), `--postgres-versions "15 16"` (shared PG/pgvector containers).
+(several), `--postgres-versions "15 16 17 18"` (shared PG/pgvector containers).
 Env equivalents: `PUBLIC_HOST`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
 `ODOO_VERSION`, `ODOO_VERSIONS`, `POSTGRES_VERSIONS`, `PORT`,
 `POSTGRES_IMAGE` (PG16 image; defaults to a pgvector tag matching the
 existing volume's libc; changing it triggers a same-major container swap),
 `PG_VOLUME` (PG16 data volume; detected from the running container when
-omitted), `PG_CONTAINER`, `PG_CONTAINER_15`.
+omitted), `PG_CONTAINER`, `PG_CONTAINER_15`, `PG_CONTAINER_17`,
+`PG_CONTAINER_18`.
 
 If you did not pass an admin password, the installer generates one and prints
 it once. Recover later with:
@@ -88,16 +90,17 @@ cd /opt/odoo-paas
 
 | Odoo series | PostgreSQL choices |
 |---|---|
-| 15.0–19.0 | 15, 16 |
-| 20.0 | 16 |
+| 15.0–19.0 | 15, 16, 17, 18 |
+| 20.0 | 16, 17, 18 |
 
 The choice is made at project creation and copied to every branch. Branch
 databases are never moved between PostgreSQL containers; create a new project
 to use a different version. The dropdown hides versions whose container is
-not provisioned. Provision both with:
+not provisioned. Every combination above was tested with base + mail, common
+business modules, an update and a web login. Provision all with:
 
 ```bash
-sudo ./install.sh --postgres-versions "15 16"
+sudo ./install.sh --postgres-versions "15 16 17 18"
 ```
 
 ### Project settings
@@ -128,23 +131,25 @@ then.
 ### AI features (Odoo 19/20)
 
 Odoo 19 and 20 AI features require the PostgreSQL
-[pgvector](https://github.com/pgvector/pgvector) extension. Both shared
-containers (`odoo-paas-pg` for 16 and `odoo-paas-pg15` for 15) run pgvector
-images; the installer enables `vector` in `template1` and every branch
-database of each container. Verify with:
+[pgvector](https://github.com/pgvector/pgvector) extension. All shared
+containers (PostgreSQL 15, 16, 17 and 18) run pgvector images; the installer
+enables `vector` in `template1` and every branch database of each container.
+Verify with:
 
 ```bash
 cd /opt/odoo-paas
 .venv/bin/python -m app.manage doctor
+# postgres 18:   ok, pgvector 0.x (odoo-paas-pg18)
+# postgres 17:   ok, pgvector 0.x (odoo-paas-pg17)
 # postgres 16:   ok, pgvector 0.x (odoo-paas-pg)
 # postgres 15:   ok, pgvector 0.x (odoo-paas-pg15)
-docker exec odoo-paas-pg15 psql -U odoo -d paas_<project>_<branch> \
+docker exec odoo-paas-pg18 psql -U odoo -d paas_<project>_<branch> \
   -tAc "select extversion from pg_extension where extname = 'vector'"
 ```
 
 If a container still runs plain `postgres`, re-run `install.sh`; it swaps the
 same-major image on the existing volume and enables the extension. New
-installs provision PG15 and PG16 by default.
+installs provision PostgreSQL 15–18 by default.
 
 ### Custom domains and HTTPS
 
@@ -291,7 +296,9 @@ runs it without Docker for UI work (macOS default).
 ```bash
 systemctl disable --now odoo-paas
 rm /etc/systemd/system/odoo-paas.service
-docker rm -f odoo-paas-pg odoo-paas-pg15 odoo-paas-mailpit $(docker ps -aq -f name=odoo-paas-branch-)
-docker volume rm odoo-paas-pgdata odoo-paas-pg15data   # destroys ALL branch databases
+docker rm -f odoo-paas-pg odoo-paas-pg15 odoo-paas-pg17 odoo-paas-pg18 \
+  odoo-paas-mailpit $(docker ps -aq -f name=odoo-paas-branch-)
+docker volume rm odoo-paas-pgdata odoo-paas-pg15data odoo-paas-pg17data \
+  odoo-paas-pg18data   # destroys ALL branch databases
 rm -rf /opt/odoo-paas /var/lib/odoo-paas
 ```

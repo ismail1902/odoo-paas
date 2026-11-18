@@ -71,6 +71,8 @@ class Settings:
         self.DOCKER_NETWORK = os.environ.get("DOCKER_NETWORK", "odoo-paas")
         self.PG_CONTAINER = os.environ.get("PG_CONTAINER", "odoo-paas-pg")
         self.PG_CONTAINER_15 = os.environ.get("PG_CONTAINER_15", "odoo-paas-pg15")
+        self.PG_CONTAINER_17 = os.environ.get("PG_CONTAINER_17", "odoo-paas-pg17")
+        self.PG_CONTAINER_18 = os.environ.get("PG_CONTAINER_18", "odoo-paas-pg18")
         self.PG_USER = os.environ.get("PG_USER", "odoo")
         self.PG_PASSWORD = os.environ.get("PG_PASSWORD", "odoo-paas")
         self.MAILPIT_CONTAINER = os.environ.get("MAILPIT_CONTAINER", "odoo-paas-mailpit")

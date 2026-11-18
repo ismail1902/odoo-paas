@@ -46,8 +46,10 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    container — never point two series at the same DB or move a DB between
    containers. `Project.postgres_version` is copied to every branch; container
    names are resolved only through `docker_ctl.postgres_container()`
-   (PostgreSQL 16 → `odoo-paas-pg`/`odoo-paas-pgdata`, PostgreSQL 15 →
-   `odoo-paas-pg15`/`odoo-paas-pg15data`). Every DB helper must receive
+   (PostgreSQL 18 → `odoo-paas-pg18`/`odoo-paas-pg18data`, 17 → `...pg17`,
+   16 → `odoo-paas-pg`/`odoo-paas-pgdata`, 15 → `...pg15`). PostgreSQL 18
+   volumes mount `/var/lib/postgresql`; 15–17 mount
+   `/var/lib/postgresql/data`. Every DB helper must receive
    `container=docker_ctl.postgres_container(branch)`. Compatibility lives in
    `app/postgres.py` and filters the New project dropdown. Every branch DB
    needs the `vector` extension for Odoo 19/20 AI; `ensure_database` enables

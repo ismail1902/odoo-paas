@@ -35,13 +35,15 @@ ACME_EMAIL="${ACME_EMAIL:-}"
 BASE_IMAGE="odoo-paas/base:${ODOO_VERSION}"
 PG_CONTAINER=odoo-paas-pg
 PG_CONTAINER_15="${PG_CONTAINER_15:-odoo-paas-pg15}"
+PG_CONTAINER_17="${PG_CONTAINER_17:-odoo-paas-pg17}"
+PG_CONTAINER_18="${PG_CONTAINER_18:-odoo-paas-pg18}"
 PG_VOLUME="${PG_VOLUME:-}"
 MAILPIT_CONTAINER=odoo-paas-mailpit
 NETWORK=odoo-paas
 # Shared pgvector containers provisioned for new projects. PostgreSQL 16
 # keeps the historical container/volume names; each other version gets
 # odoo-paas-pg<version> + odoo-paas-pg<version>data.
-POSTGRES_VERSIONS="${POSTGRES_VERSIONS:-15 16}"
+POSTGRES_VERSIONS="${POSTGRES_VERSIONS:-15 16 17 18}"
 # pgvector's PostgreSQL 16 image serves every Odoo series and provides the
 # `vector` extension required by Odoo 19/20 AI features. Leave POSTGRES_IMAGE
 # empty to pick a tag matching the existing volume's libc (2.36 -> pg16,
@@ -125,6 +127,8 @@ ACME_EMAIL=$ACME_EMAIL
 
 PG_CONTAINER=$PG_CONTAINER
 PG_CONTAINER_15=$PG_CONTAINER_15
+PG_CONTAINER_17=$PG_CONTAINER_17
+PG_CONTAINER_18=$PG_CONTAINER_18
 PG_USER=odoo
 PG_PASSWORD=$PG_PASSWORD
 
@@ -141,8 +145,10 @@ EOF
 else
   log "Keeping existing $ENV_FILE"
   PG_PASSWORD="$(grep -m1 '^PG_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
-  grep -q '^PG_CONTAINER_15=' "$ENV_FILE" \
-    || echo "PG_CONTAINER_15=$PG_CONTAINER_15" >> "$ENV_FILE"
+  for key in PG_CONTAINER_15 PG_CONTAINER_17 PG_CONTAINER_18; do
+    value="${!key}"
+    grep -q "^$key=" "$ENV_FILE" || echo "$key=$value" >> "$ENV_FILE"
+  done
   [[ -n "$PUBLIC_HOST" ]] && sed -i "s|^PUBLIC_HOST=.*|PUBLIC_HOST=$PUBLIC_HOST|" "$ENV_FILE"
   if [[ -n "$ACME_EMAIL" ]]; then
     if grep -q '^ACME_EMAIL=' "$ENV_FILE"; then
@@ -169,21 +175,33 @@ postgres_major() {
 
 pg_container_name() {
   case "$1" in
+    18) echo "$PG_CONTAINER_18" ;;
+    17) echo "$PG_CONTAINER_17" ;;
     16) echo "$PG_CONTAINER" ;;
+    15) echo "$PG_CONTAINER_15" ;;
     *)  echo "odoo-paas-pg$1" ;;
   esac
 }
 
+pg_mount_target() {
+  if [[ "$1" == "18" ]]; then
+    echo "/var/lib/postgresql"
+  else
+    echo "/var/lib/postgresql/data"
+  fi
+}
+
 pg_volume_name() {
-  local version="$1" container detected=""
+  local version="$1" container detected="" target
   if [[ "$version" == "16" ]]; then
     echo "$PG_VOLUME"
     return
   fi
   container="$(pg_container_name "$version")"
+  target="$(pg_mount_target "$version")"
   if docker container inspect "$container" >/dev/null 2>&1; then
     detected="$(docker container inspect -f \
-      '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' \
+      "{{range .Mounts}}{{if eq .Destination \"$target\"}}{{.Name}}{{end}}{{end}}" \
       "$container")"
   fi
   echo "${detected:-odoo-paas-pg${version}data}"
@@ -209,11 +227,11 @@ pg_image_for() {
 }
 
 run_pg_container() {
-  local container="$1" volume="$2" image="$3"
+  local container="$1" volume="$2" image="$3" target="$4"
   docker run -d --name "$container" --restart unless-stopped \
     --network "$NETWORK" \
     -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD="$PG_PASSWORD" \
-    -v "$volume":/var/lib/postgresql/data \
+    -v "$volume":"$target" \
     "$image" >/dev/null
 }
 
@@ -261,9 +279,10 @@ check_pg_collation() {
 }
 
 ensure_postgres() {
-  local version="$1" container volume image running_image running_major target_major
+  local version="$1" container volume mount_target image running_image running_major target_major
   container="$(pg_container_name "$version")"
   volume="$(pg_volume_name "$version")"
+  mount_target="$(pg_mount_target "$version")"
   if ! docker container inspect "$container" >/dev/null 2>&1; then
     image="$(pg_image_for "$version" "$container")"
     if ! docker pull "$image" >/dev/null; then
@@ -271,7 +290,7 @@ ensure_postgres() {
       return 0
     fi
     log "Starting PostgreSQL $version ($container, $image)"
-    run_pg_container "$container" "$volume" "$image"
+    run_pg_container "$container" "$volume" "$image" "$mount_target"
   else
     docker start "$container" >/dev/null 2>&1 || true
     image="$(pg_image_for "$version" "$container")"
@@ -283,10 +302,11 @@ ensure_postgres() {
           && docker pull "$image" >/dev/null; then
         log "Upgrading PostgreSQL $version: $running_image -> $image (data volume kept)"
         docker rm -f "$container" >/dev/null
-        if ! run_pg_container "$container" "$volume" "$image" || ! wait_for_pg "$container"; then
+        if ! run_pg_container "$container" "$volume" "$image" "$mount_target" \
+            || ! wait_for_pg "$container"; then
           warn "PostgreSQL $version failed to start; rolling back to $running_image"
           docker rm -f "$container" >/dev/null 2>&1 || true
-          run_pg_container "$container" "$volume" "$running_image"
+          run_pg_container "$container" "$volume" "$running_image" "$mount_target"
           wait_for_pg "$container" || warn "PostgreSQL $version is not ready - check docker logs $container"
         fi
       else
@@ -318,7 +338,7 @@ PG_VOLUME="${PG_VOLUME:-odoo-paas-pgdata}"
 
 for pg_version in ${POSTGRES_VERSIONS//,/ }; do
   case "$pg_version" in
-    15|16) ensure_postgres "$pg_version" ;;
+    15|16|17|18) ensure_postgres "$pg_version" ;;
     *) warn "unsupported PostgreSQL version '$pg_version' - skipping" ;;
   esac
 done

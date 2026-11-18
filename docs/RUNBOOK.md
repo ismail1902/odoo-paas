@@ -169,9 +169,12 @@ Per-series requirements (install.sh picks the base automatically):
 | 17.0, 18.0, 19.0 | 3.10–3.13 (Debian 3.11) | ≥ 13 | `debian:bookworm-slim` |
 | 20.0 | ≥ 3.12 | ≥ 16 (`any_value()`) | `python:3.12-slim-bookworm` |
 
-The shared `odoo-paas-pg` container runs PostgreSQL 16, which satisfies all
-supported series; `odoo-paas-pg15` runs PostgreSQL 15 for projects that
-choose it (Odoo 15–19).
+The shared containers run PostgreSQL 15, 16, 17 and 18. PostgreSQL 16 is the
+default for new projects; the project form offers PG15–18 for Odoo 15–19 and
+PG16–18 for Odoo 20. All combinations are tested with base + mail, common
+business modules, an Odoo update and a web login. A PG17→PG18 dump/restore
+of Odoo 18 (current 18.0 image) also passed; very old pre-fix Odoo 18 dumps
+may still contain the redundant `channel_type` constraint that PG18 rejects.
 
 If a project's base image was removed, deploys fail with "Base image for
 Odoo X is not built on this host" — rebuild it or create the project on a
@@ -184,17 +187,23 @@ never point two Odoo series at the same database.
 Each project chooses a PostgreSQL/pgvector version at creation; every branch
 copies it. The platform provisions one shared container per version:
 
-| PG | Container | Volume | Image |
-|---|---|---|---|
-| 16 | `odoo-paas-pg` | `odoo-paas-pgdata` | `pgvector/pgvector:pg16-trixie` |
-| 15 | `odoo-paas-pg15` | `odoo-paas-pg15data` | `pgvector/pgvector:pg15-trixie` |
+| PG | Container | Volume | Image | Volume mount |
+|---|---|---|---|---|
+| 18 | `odoo-paas-pg18` | `odoo-paas-pg18data` | `pgvector/pgvector:pg18-trixie` | `/var/lib/postgresql` |
+| 17 | `odoo-paas-pg17` | `odoo-paas-pg17data` | `pgvector/pgvector:pg17-trixie` | `/var/lib/postgresql/data` |
+| 16 | `odoo-paas-pg` | `odoo-paas-pgdata` | `pgvector/pgvector:pg16-trixie` | `/var/lib/postgresql/data` |
+| 15 | `odoo-paas-pg15` | `odoo-paas-pg15data` | `pgvector/pgvector:pg15-trixie` | `/var/lib/postgresql/data` |
 
-Compatible Odoo versions: PostgreSQL 15/16 for Odoo 15–19, PostgreSQL 16 only
+PostgreSQL 18 uses the upstream image's versioned PGDATA
+(`/var/lib/postgresql/18/docker`), so its volume mounts the parent directory;
+15–17 mount `/var/lib/postgresql/data`.
+
+Compatible Odoo versions: PostgreSQL 15–18 for Odoo 15–19, PostgreSQL 16–18
 for Odoo 20. The New project dropdown hides PG versions whose container is
-not running. Provision both with:
+not running. Provision all four with:
 
 ```bash
-sudo ./install.sh --postgres-versions "15 16"
+sudo ./install.sh --postgres-versions "15 16 17 18"
 ```
 
 A branch database lives in exactly one container. It is never moved between
@@ -214,6 +223,8 @@ containers and `-trixie` otherwise; set `POSTGRES_IMAGE` to override PG16.
 ```bash
 cd /opt/odoo-paas
 .venv/bin/python -m app.manage doctor
+# postgres 18:   ok, pgvector 0.x (odoo-paas-pg18)
+# postgres 17:   ok, pgvector 0.x (odoo-paas-pg17)
 # postgres 16:   ok, pgvector 0.x (odoo-paas-pg)
 # postgres 15:   ok, pgvector 0.x (odoo-paas-pg15)
 
@@ -226,10 +237,11 @@ docker exec odoo-paas-pg psql -U odoo -d postgres -tAc \
     done
 ```
 
-Use `odoo-paas-pg15` instead of `odoo-paas-pg` to inspect the PG15 container.
-If `pg_available_extensions` has no `vector`, the container still runs plain
-`postgres`. Re-run `install.sh` (it safely swaps same-major images on the
-existing volume and enables the extension), or recreate it manually:
+Use `odoo-paas-pg15`, `odoo-paas-pg17` or `odoo-paas-pg18` instead of
+`odoo-paas-pg` to inspect another container. If `pg_available_extensions` has
+no `vector`, the container still runs plain `postgres`. Re-run `install.sh`
+(it safely swaps same-major images on the existing volume and enables the
+extension), or recreate it manually:
 
 ```bash
 docker rm -f odoo-paas-pg
@@ -249,8 +261,9 @@ database "..." has a collation version mismatch
 ```
 
 Pick the matching image tag: `pgvector/pgvector:pg16` for bookworm volumes,
-`pgvector/pgvector:pg16-trixie` for trixie volumes (use `pg15` / `pg15-trixie`
-for the PG15 container). Do **not** just run
+`pgvector/pgvector:pg16-trixie` for trixie volumes (use the equivalent
+`pg15`/`pg17`/`pg18` tags for the other containers; PG18 still mounts the
+volume at `/var/lib/postgresql`). Do **not** just run
 `ALTER DATABASE ... REFRESH COLLATION VERSION` on a volume that was used by
 the other libc: text indexes may have been written with a different sort
 order. The safe fix is a dump/restore into a fresh volume. Keep the same
@@ -282,8 +295,9 @@ Odoo >= 20 requires PostgreSQL >= 16 (`any_value()`, and a hard check at
 startup: "Postgres version … lower than minimum required"). The platform
 container `odoo-paas-pg` is created from `pgvector/pgvector:pg16-trixie` by
 current installs; older installs used `postgres:15/16`. The separate
-`odoo-paas-pg15` container is intentionally PostgreSQL 15 and is not upgraded
-by this procedure. To upgrade the PG16 container with data:
+`odoo-paas-pg15`, `odoo-paas-pg17` and `odoo-paas-pg18` containers keep those
+versions and are not upgraded by this procedure. To upgrade the PG16
+container with data:
 
 ```bash
 # 1. dump everything (while containers may keep running)
@@ -311,10 +325,10 @@ Then redeploy the PG16 branches. PG 15→16 is a plain dump/restore (no
 `pg_upgrade` needed at this scale). If anything goes wrong, remove the new
 container/volume and start `odoo-paas-pg` from the old `odoo-paas-pgdata`.
 
-To move a project from PG15 to PG16, create a new project on PG16 and restore
-its branch dumps into the new project's databases. Do not edit
-`Branch.postgres_version` in place: the branch metadata and its database must
-stay on the same container.
+To move a project between PostgreSQL versions, create a new project on the
+target version and restore its branch dumps into the new project's databases.
+Do not edit `Branch.postgres_version` in place: the branch metadata and its
+database must stay on the same container.
 
 ## Log locations
 
@@ -323,6 +337,8 @@ stay on the same container.
 | Build logs (host) | `/var/lib/odoo-paas/logs/build-<id>.log` |
 | Odoo server logs | `docker logs odoo-paas-branch-<id>` |
 | Platform service logs | `journalctl -u odoo-paas -f` |
+| PostgreSQL 18 | `docker logs odoo-paas-pg18` |
+| PostgreSQL 17 | `docker logs odoo-paas-pg17` |
 | PostgreSQL 16 | `docker logs odoo-paas-pg` |
 | PostgreSQL 15 | `docker logs odoo-paas-pg15` |
 | Mailpit UI | `http://127.0.0.1:8025` (tunnel) |
