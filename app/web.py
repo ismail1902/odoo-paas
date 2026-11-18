@@ -385,7 +385,7 @@ def create_branch(
     project_id: int,
     request: Request,
     name: str = Form(...),
-    stage: str = Form("development"),
+    stage: str = Form("production"),
     session: Session = Depends(get_session),
 ):
     user, redirect = _page_user(request, session)
