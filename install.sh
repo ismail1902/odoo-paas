@@ -266,7 +266,7 @@ if [[ -n "$target_glibc" ]]; then
   mismatched_collations="$(docker exec "$PG_CONTAINER" psql -U odoo -d postgres -tAc \
     "SELECT DISTINCT datcollversion FROM pg_database
      WHERE datlocprovider = 'c' AND datcollversion IS NOT NULL
-       AND datcollversion <> '$target_glibc'")"
+       AND datcollversion <> '$target_glibc'" 2>/dev/null || true)"
   if [[ -n "$mismatched_collations" ]]; then
     warn "PostgreSQL collation version mismatch ($mismatched_collations vs glibc $target_glibc)."
     warn "Use a matching pgvector image tag (pg16 vs pg16-trixie) or dump/restore -"
