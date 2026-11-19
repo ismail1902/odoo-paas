@@ -164,9 +164,10 @@ database from an uploaded file:
 - Gzipped SQL (`.sql.gz`)
 - Odoo backup zip (`dump.sql` + `filestore/`)
 
-The upload limit is 2 GB. After upload, the restore is queued in the single
-platform worker; the Backups tab shows the status and a live log that refreshes
-while it runs. Start/Deploy/Stop/delete are blocked for that branch until the
+The upload limit is 2 GB. The import dialog shows upload percentage, transferred
+bytes and throughput; Cancel aborts the upload before the restore starts.
+After upload, the restore is queued in the single platform worker; the Backups
+tab shows the status and a live log that refreshes while it runs. Start/Deploy/Stop/delete are blocked for that branch until the
 job finishes. The container is stopped during import and stays stopped
 afterward; press **Start** or **Deploy** when ready. A zip also replaces the
 Odoo filestore for that branch's database; other formats restore the database

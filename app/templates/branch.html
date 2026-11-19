@@ -177,7 +177,7 @@
       </div>
       <button type="button" class="modal-close" data-close-import-backup aria-label="Close">&times;</button>
     </div>
-    <div class="stack">
+    <div class="stack" data-import-fields>
       <label>Backup file
         <input type="file" name="file" required
                accept=".dump,.backup,.sql,.gz,.zip,application/zip,application/gzip">
@@ -193,10 +193,23 @@
         The dump must match this branch's Odoo and PostgreSQL versions.
       </p>
     </div>
+    <div class="upload-progress" data-import-progress role="status" aria-live="polite" hidden>
+      <div class="upload-progress-head">
+        <strong data-import-phase>Uploading backup…</strong>
+        <span data-import-percent>0%</span>
+      </div>
+      <div class="upload-progress-track"><span data-import-bar></span></div>
+      <div class="upload-progress-meta">
+        <span data-import-bytes>0 B / 0 B</span>
+        <span data-import-speed>—</span>
+      </div>
+      <p class="muted small">Keep this window open. Cancel aborts the upload before the restore starts.</p>
+    </div>
+    <p class="muted small danger-text" data-import-error hidden></p>
     <input type="hidden" name="confirm" value="import">
     <div class="row gap modal-actions">
-      <button class="primary" type="submit">Import and restore</button>
-      <button type="button" class="button" data-close-import-backup>Cancel</button>
+      <button class="primary" type="submit" data-import-submit>Import and restore</button>
+      <button type="button" class="button" data-close-import-backup data-import-cancel>Cancel</button>
     </div>
   </form>
 </dialog>
