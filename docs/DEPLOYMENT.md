@@ -289,17 +289,39 @@ Backups → *Create backup*, then the staging branch → Backups → *Restore*
 
 ## Updating the platform
 
+Pull in the Git checkout that contains `install.sh` (usually
+`/root/odoo-paas`), not in the generated `/opt/odoo-paas` copy. If the server
+has no Git checkout, copy/scp the updated repository there instead, then run
+the installer:
+
 ```bash
-cd /root/odoo-paas && git pull        # or re-scp the directory
-sudo ./install.sh                      # rsyncs to /opt/odoo-paas, restarts service
+cd /root/odoo-paas
+git pull --ff-only
+sudo ./install.sh
 ```
 
-Running branch containers are not touched. New base-image content (Odoo
-security updates) needs a rebuild of the wanted versions:
+`install.sh` is the upgrader and is safe to re-run:
+
+- It keeps `/opt/odoo-paas/.env`, secrets and `/var/lib/odoo-paas`.
+- It rsyncs the new code to `/opt/odoo-paas`, installs Python dependencies,
+  installs the systemd unit, and restarts the control plane.
+- It ensures the Docker network, PostgreSQL/pgvector containers and Mailpit.
+- It checks all supported Odoo base images (15.0–20.0); already-built images
+  are skipped. If the update added a new Odoo version, it is built now.
+- SQLite state migrations run automatically when the service starts.
+- A configured control-plane domain and `HOST=127.0.0.1` binding are preserved.
+
+Running branch containers are not touched by the platform update. Recreate
+them with **Deploy**/**Start** when the release changes Odoo container behavior
+or environment variables. If an update changes nginx templates, re-save the
+control-plane domain and branch domains once to regenerate their configs.
+
+If the release changes the Odoo base Dockerfile or its dependencies, refresh
+the base images explicitly:
 
 ```bash
 sudo ./install.sh --rebuild-base --odoo-versions "15.0 16.0 17.0 20.0"
-# then redeploy branches (Deploy button) to pick up the new image
+# then redeploy the affected branches (Deploy button) to use the new image
 ```
 
 Or from the UI: open a branch → **Update Odoo + Deploy**. This rebuilds the

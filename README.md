@@ -113,6 +113,25 @@ Let's Encrypt are configured automatically; uvicorn then listens only on
 (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); preview with
 `--dry-run`. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
+## Updating
+
+Run this from the Git checkout that contains `install.sh` (typically
+`/root/odoo-paas`, not the generated `/opt/odoo-paas` copy; if the server has
+no checkout, copy/scp the updated repository there instead):
+
+```bash
+cd /root/odoo-paas
+git pull --ff-only
+sudo ./install.sh
+```
+
+`install.sh` is the upgrader: it preserves `.env`/data, syncs the new code to
+`/opt/odoo-paas`, installs dependencies, checks all Odoo base images, refreshes
+the systemd unit and restarts the control plane. Existing branch containers
+are recreated only on **Deploy**/**Start** (or **Update Odoo + Deploy**), so do
+that when an update changes Odoo container behavior. If a release changes the
+nginx templates, re-save the affected control-plane/branch domains once.
+
 ## Using it
 
 1. **New project** — dashboard → *New project*: name + Odoo version, and a

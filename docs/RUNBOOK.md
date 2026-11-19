@@ -20,6 +20,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Task | How |
 |---|---|
 | Deploy / redeploy a branch | UI: branch → Deploy. Or push to the git branch (webhook). |
+| Update the platform | In the Git checkout: `git pull --ff-only && sudo ./install.sh`; then Deploy branches if container behavior changed. |
 | Update Odoo core to latest | branch → **Update Odoo + Deploy** (rebuilds `odoo-paas/base:<version>` from the latest source, runs `-u all` when the DB exists, then deploys). Take a production backup first. |
 | Add a domain / HTTPS | Enable Proxy mode in Project settings, set the branch's **Custom domain**, ensure DNS and 80/443 are open, then Deploy. Config: `/etc/nginx/conf.d/odoo-paas-branch-<id>.conf`. |
 | Inspect live resource usage | branch → **Monitor**: CPU/RAM/network/disk charts poll `/api/monitor` every 2 s; use **Pause** to freeze the view. |
