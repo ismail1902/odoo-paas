@@ -1,7 +1,8 @@
 """Background worker thread.
 
-- Claims queued builds one at a time and runs the pipeline.
-- Recovers stale builds on startup (mark anything left `running` as failed).
+- Claims queued restore jobs, then queued builds, one at a time.
+- Recovers stale builds/restores on startup (mark anything left `running` as
+  failed).
 - Runs the backup retention policy hourly.
 """
 from __future__ import annotations
@@ -10,12 +11,23 @@ import threading
 import time
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlmodel import select
 
 from app.config import settings
 from app.db import session_scope
-from app.models import BUILD_FAILED, BUILD_QUEUED, BUILD_RUNNING, Branch, Build
+from app.models import (
+    BUILD_FAILED,
+    BUILD_QUEUED,
+    BUILD_RUNNING,
+    RESTORE_FAILED,
+    RESTORE_QUEUED,
+    RESTORE_RUNNING,
+    Branch,
+    Build,
+    RestoreJob,
+)
 from app.services import backups, builder
 
 _started = False
@@ -30,6 +42,7 @@ def start_worker() -> None:
             return
         _started = True
     _recover_stale_builds()
+    _recover_stale_restores()
     thread = threading.Thread(target=_loop, name="odoo-paas-worker", daemon=True)
     thread.start()
 
@@ -45,6 +58,26 @@ def _recover_stale_builds() -> None:
             session.add(build)
 
 
+def _recover_stale_restores() -> None:
+    """Restores interrupted by a platform restart are marked failed."""
+    with session_scope() as session:
+        stale = session.exec(
+            select(RestoreJob).where(RestoreJob.status == RESTORE_RUNNING)
+        ).all()
+        for job in stale:
+            job.status = RESTORE_FAILED
+            job.step = "interrupted by platform restart"
+            job.error = "interrupted by platform restart"
+            job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            branch = session.get(Branch, job.branch_id)
+            if branch is not None:
+                branch.status = "stopped"
+                session.add(branch)
+            session.add(job)
+            if job.kind == "import" and job.source_path:
+                Path(job.source_path).unlink(missing_ok=True)
+
+
 def _loop() -> None:
     while True:
         try:
@@ -55,6 +88,19 @@ def _loop() -> None:
 
 
 def _tick() -> None:
+    restore_id = None
+    with session_scope() as session:
+        job = session.exec(
+            select(RestoreJob)
+            .where(RestoreJob.status == RESTORE_QUEUED)
+            .order_by(RestoreJob.id)
+        ).first()
+        if job is not None:
+            restore_id = job.id
+    if restore_id is not None:
+        backups.run_restore_job(restore_id)
+        return
+
     build_id = None
     with session_scope() as session:
         build = session.exec(

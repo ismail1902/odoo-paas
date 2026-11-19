@@ -164,13 +164,16 @@ database from an uploaded file:
 - Gzipped SQL (`.sql.gz`)
 - Odoo backup zip (`dump.sql` + `filestore/`)
 
-The upload limit is 2 GB. The branch container is stopped during import and
-stays stopped afterward; press **Start** or **Deploy** when ready. A zip also
-replaces the Odoo filestore for that branch's database; other formats restore
-the database only. The source dump must use the branch's Odoo and PostgreSQL
-versions. Take a backup before importing if the current data may be needed.
-If the control plane has a custom domain, re-save it once after updating so
-nginx picks up the larger upload limit.
+The upload limit is 2 GB. After upload, the restore is queued in the single
+platform worker; the Backups tab shows the status and a live log that refreshes
+while it runs. Start/Deploy/Stop/delete are blocked for that branch until the
+job finishes. The container is stopped during import and stays stopped
+afterward; press **Start** or **Deploy** when ready. A zip also replaces the
+Odoo filestore for that branch's database; other formats restore the database
+only. The source dump must use the branch's Odoo and PostgreSQL versions. Take
+a backup before importing if the current data may be needed. If the control
+plane has a custom domain, re-save it once after updating so nginx picks up the
+larger upload limit.
 
 ## Odoo versions
 

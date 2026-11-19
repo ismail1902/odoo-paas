@@ -1,4 +1,7 @@
-"""Backups: pg_dump + filestore tarball, retention buckets, restore.
+"""Backups: pg_dump + filestore tarball, retention buckets, restore/import.
+
+Restores run as durable ``RestoreJob`` rows in the single platform worker so
+the UI can follow a log without holding an HTTP request open.
 
 Retention (approximation of the Odoo.sh policy, see docs/RUNBOOK.md):
   - nothing younger than 3 days is ever deleted automatically
@@ -13,17 +16,27 @@ import shutil
 import stat
 import tarfile
 import time
+import traceback
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Set
+from typing import Callable, Optional, Set
 
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app.config import settings
 from app.db import session_scope
 from app.errors import PlatformError
-from app.models import Backup, Branch, Event
+from app.models import (
+    RESTORE_FAILED,
+    RESTORE_QUEUED,
+    RESTORE_RUNNING,
+    RESTORE_SUCCEEDED,
+    Backup,
+    Branch,
+    Event,
+    RestoreJob,
+)
 from app.services import docker_ctl
 
 RECENT_KEEP_DAYS = 3
@@ -45,6 +58,25 @@ def import_path(branch, filename: str) -> Path:
     out = settings.BACKUP_ROOT / "imports"
     out.mkdir(parents=True, exist_ok=True)
     return out / f"branch-{branch.id}-{time.time_ns()}-{safe}"
+
+
+def active_restore(session: Session, branch_id: int) -> Optional[RestoreJob]:
+    return session.exec(
+        select(RestoreJob)
+        .where(
+            RestoreJob.branch_id == branch_id,
+            RestoreJob.status.in_([RESTORE_QUEUED, RESTORE_RUNNING]),
+        )
+        .order_by(RestoreJob.id.desc())
+    ).first()
+
+
+def latest_restore(session: Session, branch_id: int) -> Optional[RestoreJob]:
+    return session.exec(
+        select(RestoreJob)
+        .where(RestoreJob.branch_id == branch_id)
+        .order_by(RestoreJob.id.desc())
+    ).first()
 
 
 def create_backup(branch, *, kind: str = "manual", note: str = "") -> Backup:
@@ -184,11 +216,20 @@ def _extract_odoo_zip(src: Path, dest: Path) -> tuple:
     return dump_path, (filestore if filestore.exists() else None)
 
 
-def _import_zip(branch, src: Path) -> None:
+def _log(log: Optional[Callable[[str], None]], message: str) -> None:
+    if log is not None:
+        log(message)
+
+
+def _import_zip(
+    branch, src: Path, log: Optional[Callable[[str], None]] = None
+) -> None:
     work = settings.BACKUP_ROOT / "imports" / f"extract-{time.time_ns()}"
     work.mkdir(parents=True, exist_ok=True)
     try:
+        _log(log, "extracting Odoo zip")
         dump_path, filestore = _extract_odoo_zip(src, work)
+        _log(log, "restoring database from dump.sql")
         docker_ctl.restore_sql_database(
             branch.db_name,
             dump_path,
@@ -200,23 +241,34 @@ def _import_zip(branch, src: Path) -> None:
                 / "filestore"
                 / branch.db_name
             )
+            _log(log, f"restoring filestore to {dest}")
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.move(str(filestore), str(dest))
             docker_ctl.make_tree_container_writable(dest)
+        else:
+            _log(log, "zip has no filestore; existing filestore left unchanged")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def import_database(branch, src: Path, original_name: str) -> str:
+def import_database(
+    branch,
+    src: Path,
+    original_name: str,
+    log: Optional[Callable[[str], None]] = None,
+) -> str:
     """Restore an uploaded PostgreSQL/Odoo backup into a branch."""
+    _log(log, f"detecting backup format for {Path(original_name).name}")
     fmt = _import_format(src)
+    _log(log, f"detected {fmt}; stopping branch container")
     docker_ctl.stop_container(docker_ctl.container_name(branch))
     if fmt == "zip":
-        _import_zip(branch, src)
+        _import_zip(branch, src, log=log)
         label = "Odoo zip"
     elif fmt == "pgdump":
+        _log(log, "restoring PostgreSQL custom dump")
         docker_ctl.restore_database(
             branch.db_name,
             src,
@@ -224,6 +276,7 @@ def import_database(branch, src: Path, original_name: str) -> str:
         )
         label = "PostgreSQL dump"
     else:
+        _log(log, f"restoring {fmt} dump")
         docker_ctl.restore_sql_database(
             branch.db_name,
             src,
@@ -246,11 +299,17 @@ def import_database(branch, src: Path, original_name: str) -> str:
     return label
 
 
-def restore_backup(branch, backup: Backup) -> None:
+def restore_backup(
+    branch,
+    backup: Backup,
+    log: Optional[Callable[[str], None]] = None,
+) -> None:
     db_path = Path(backup.db_path)
     if not db_path.exists():
         raise PlatformError("backup dump file is missing on disk")
+    _log(log, f"stopping branch container for backup #{backup.id}")
     docker_ctl.stop_container(docker_ctl.container_name(branch))
+    _log(log, "restoring database dump")
     docker_ctl.restore_database(
         branch.db_name,
         db_path,
@@ -258,6 +317,7 @@ def restore_backup(branch, backup: Backup) -> None:
     )
     if backup.filestore_path and Path(backup.filestore_path).exists():
         base = docker_ctl.filestore_dir(branch)
+        _log(log, f"restoring filestore from {backup.filestore_path}")
         if base.exists():
             shutil.rmtree(base)
         base.mkdir(parents=True, exist_ok=True)
@@ -267,6 +327,8 @@ def restore_backup(branch, backup: Backup) -> None:
             except TypeError:
                 tar.extractall(base)
         docker_ctl.make_tree_container_writable(base)
+    else:
+        _log(log, "backup has no filestore archive")
     with session_scope() as session:
         session.add(
             Event(
@@ -276,6 +338,100 @@ def restore_backup(branch, backup: Backup) -> None:
                 message=f"Backup #{backup.id} restored into '{branch.name}' (container stopped)",
             )
         )
+
+
+def run_restore_job(job_id: int) -> None:
+    """Execute a queued restore/import job with a persistent log."""
+    with session_scope() as session:
+        job = session.get(RestoreJob, job_id)
+        if job is None or job.status != RESTORE_QUEUED:
+            return
+        branch = session.get(Branch, job.branch_id)
+        if branch is None:
+            job.status = RESTORE_FAILED
+            job.step = "failed"
+            job.error = "branch not found"
+            job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(job)
+            return
+        backup = session.get(Backup, job.backup_id) if job.backup_id else None
+        kind = job.kind
+        source_path = job.source_path
+        source_name = job.source_name
+
+    settings.LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    log_path = settings.LOG_ROOT / f"restore-{job_id}.log"
+
+    def log(message: str) -> None:
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with log_path.open("a") as handle:
+            handle.write(f"{stamp} {message}\n")
+
+    with session_scope() as session:
+        job = session.get(RestoreJob, job_id)
+        if job is None:
+            return
+        job.status = RESTORE_RUNNING
+        job.step = "starting"
+        job.log_path = str(log_path)
+        job.started_at = job.started_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        branch = session.get(Branch, job.branch_id)
+        if branch is not None:
+            branch.status = "restoring"
+            session.add(branch)
+        session.add(job)
+
+    log(f"Restore #{job_id} | branch '{branch.name}' | kind {kind}")
+    try:
+        if kind == "backup":
+            if backup is None:
+                raise PlatformError("backup not found")
+            log(f"restoring backup #{backup.id}")
+            restore_backup(branch, backup, log=log)
+        else:
+            if not source_path:
+                raise PlatformError("uploaded backup file is missing")
+            log(f"importing {source_name or Path(source_path).name}")
+            import_database(branch, Path(source_path), source_name, log=log)
+        with session_scope() as session:
+            job = session.get(RestoreJob, job_id)
+            if job is not None:
+                job.status = RESTORE_SUCCEEDED
+                job.step = "done"
+                job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(job)
+            branch = session.get(Branch, job.branch_id) if job is not None else None
+            if branch is not None:
+                branch.status = "stopped"
+                session.add(branch)
+        log("restore complete; container remains stopped")
+    except Exception as exc:  # noqa: BLE001 - surfaced in the job log/status
+        detail = str(exc).replace("\n", " ")[:2000]
+        log(f"ERROR: {detail}")
+        log(traceback.format_exc())
+        with session_scope() as session:
+            job = session.get(RestoreJob, job_id)
+            branch = session.get(Branch, job.branch_id) if job is not None else None
+            if job is not None:
+                job.status = RESTORE_FAILED
+                job.step = "failed"
+                job.error = detail
+                job.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(job)
+            if branch is not None:
+                branch.status = "stopped"
+                session.add(branch)
+                session.add(
+                    Event(
+                        project_id=branch.project_id,
+                        branch_id=branch.id,
+                        kind="error",
+                        message=f"Restore #{job_id} failed: {detail[:200]}",
+                    )
+                )
+    finally:
+        if kind == "import" and source_path:
+            Path(source_path).unlink(missing_ok=True)
 
 
 def delete_backup(backup: Backup) -> None:

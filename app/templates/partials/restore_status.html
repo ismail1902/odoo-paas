@@ -1,0 +1,25 @@
+{% if restore_job %}
+<div class="card restore-panel" id="restore-status"
+     {% if restore_active %}hx-get="/branches/{{ branch.id }}/restore-status" hx-trigger="every 2s" hx-swap="outerHTML" aria-live="polite"{% endif %}>
+  <div class="row space-between">
+    <div>
+      <h3>Database restore #{{ restore_job.id }}</h3>
+      <p class="muted small">
+        {{ restore_job.kind }} · {{ restore_job.source_name or 'backup' }}
+      </p>
+    </div>
+    <span class="pill {{ restore_job.status }}">{{ restore_job.status }}</span>
+  </div>
+  <p class="small muted">
+    Step: {{ restore_job.step }}{% if restore_job.error %} · <span class="danger-text">{{ restore_job.error }}</span>{% endif %}
+  </p>
+  <pre class="restore-log">{{ restore_log_tail }}</pre>
+  {% if restore_job.status == 'succeeded' %}
+  <p class="small">The database is restored. The container remains stopped; use <strong>Start</strong> or <strong>Deploy</strong>.</p>
+  {% elif restore_job.status == 'failed' %}
+  <p class="small danger-text">The restore failed. Review the log before starting the branch again.</p>
+  {% elif restore_active %}
+  <p class="small muted">This panel refreshes every 2 seconds while the worker runs.</p>
+  {% endif %}
+</div>
+{% endif %}

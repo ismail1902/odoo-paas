@@ -38,11 +38,11 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 6. **All supported base images are built on install.** `install.sh` defaults to
    Odoo 15.0–20.0; keep that list in sync with `app/config.py` and
    `.env.example`. `ODOO_VERSIONS` or `--odoo-versions` can limit the set.
-7. **Builds run one at a time** in a single worker thread
-   (`app/worker.py`). Don't introduce parallel builds without redesigning
-   state transitions (queued → running → succeeded/failed). Base-image
-   rebuilds use the same queue via `Build.rebuild_base` and
-   `docker_ctl.build_base_image`, so they are serialized too.
+7. **Builds and restores run one at a time** in a single worker thread
+   (`app/worker.py`). Restore jobs are claimed before builds. Don't introduce
+   parallel builds/restores without redesigning state transitions
+   (queued → running → succeeded/failed). Base-image rebuilds use the same
+   queue via `Build.rebuild_base` and `docker_ctl.build_base_image`.
 8. **Databases are derived from names**: `paas_<project.slug>_<branch>` via
    `web._db_name()`. Don't rename a branch's DB independently or history is
    lost. A database belongs to exactly one Odoo series and one PostgreSQL
@@ -80,11 +80,11 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/postgres.py` | supported PostgreSQL/pgvector versions and Odoo compatibility |
 | `app/auth.py` | PBKDF2 hashing, signed-cookie sessions, `has_role`, `can_open_shell` |
 | `app/ports.py` | port pool allocation (persisted on Branch, OS bind test) |
-| `app/worker.py` | build claim loop, stale-build recovery, hourly retention |
+| `app/worker.py` | restore/build claim loop, stale-job recovery, hourly retention |
 | `app/manage.py` | argparse CLI (init, create-admin, set-password, backup-all, retention, doctor) |
 | `app/services/builder.py` | the 5-step pipeline; writes `logs/build-<id>.log` |
 | `app/services/gitops.py` | git sync/checkout, commit metadata, webhook HMAC verify |
-| `app/services/backups.py` | dump/restore/retention (3d + 7/4/3 buckets) |
+| `app/services/backups.py` | dump/import/restore jobs, retention (3d + 7/4/3 buckets) |
 | `app/services/monitor.py` | psutil host stats + container stats |
 | `app/services/nginx.py` | per-branch and control-plane nginx, Let's Encrypt, reload/rollback |
 | `app/services/control_plane.py` | control-plane domain setting, nginx/HTTPS apply, `HOST` rebind, restart scheduling |
@@ -188,6 +188,10 @@ There is no test suite; verify by:
 - WebSocket shell needs the `docker` SDK exec socket
   (`terminal._socket._sock`); this is a private API but stable across the
   pinned `docker>=7.1,<8`.
+- Database imports/restores are queued `RestoreJob` rows, not synchronous
+  request work. The worker writes `logs/restore-<id>.log`; the Backups tab
+  polls a partial while the job is active. Start/Deploy/Stop/delete must stay
+  blocked while a branch has a queued/running restore job.
 - `uninstall.sh` is non-destructive by default: it keeps PostgreSQL volumes,
   `/var/lib/odoo-paas` and certificates. Only `--purge` may delete data.
   `--dry-run` must remain side-effect free.

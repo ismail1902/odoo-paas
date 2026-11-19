@@ -38,12 +38,16 @@ from app.db import get_session
 from app.errors import DeployError, PlatformError
 from app.models import (
     BUILD_QUEUED,
+    BUILD_RUNNING,
+    RESTORE_QUEUED,
+    RESTORE_RUNNING,
     STAGES,
     Backup,
     Branch,
     Build,
     Event,
     Project,
+    RestoreJob,
     User,
 )
 from app.ports import allocate_gevent_port, allocate_port
@@ -431,12 +435,21 @@ def delete_project(
     if confirm.strip() != project.slug:
         return _back(f"/projects/{project_id}", "Type the project name to confirm deletion")
     branches = session.exec(select(Branch).where(Branch.project_id == project_id)).all()
+    if any(backups_service.active_restore(session, branch.id) for branch in branches):
+        return _back(
+            f"/projects/{project_id}",
+            "A database restore is queued/running for a branch in this project",
+        )
     for branch in branches:
         try:
             nginx.remove(branch)
         except Exception:  # noqa: BLE001 - deletion should not be blocked
             pass
         docker_ctl.remove_container(branch.container_name)
+        for job in session.exec(
+            select(RestoreJob).where(RestoreJob.branch_id == branch.id)
+        ).all():
+            session.delete(job)
         session.delete(branch)
     session.delete(project)
     session.commit()
@@ -577,6 +590,20 @@ def branch_page(
     backup_rows = session.exec(
         select(Backup).where(Backup.branch_id == branch_id).order_by(Backup.id.desc()).limit(50)
     ).all()
+    restore_job = (
+        backups_service.latest_restore(session, branch_id)
+        if tab == "backups"
+        else None
+    )
+    restore_active = bool(
+        restore_job
+        and restore_job.status in (RESTORE_QUEUED, RESTORE_RUNNING)
+    )
+    restore_log_tail = (
+        _tail_lines(Path(restore_job.log_path), 80)
+        if restore_job and restore_job.log_path
+        else "(waiting for worker...)"
+    )
     repo = docker_ctl.repo_dir(branch)
     commits = gitops.recent_commits(repo) if (repo / ".git").exists() else []
     stats = monitor.branch_stats(branch) if tab == "monitor" else None
@@ -601,6 +628,9 @@ def branch_page(
             builds=builds,
             events=events,
             backups=backup_rows,
+            restore_job=restore_job,
+            restore_active=restore_active,
+            restore_log_tail=restore_log_tail,
             commits=commits,
             tab=tab,
             stats=stats,
@@ -610,6 +640,36 @@ def branch_page(
             can_shell=can_open_shell(user, branch.stage),
             container_state=docker_ctl.container_state(branch.container_name),
         ),
+    )
+
+
+@router.get("/branches/{branch_id}/restore-status", response_class=HTMLResponse)
+def restore_status_partial(
+    branch_id: int, request: Request, session: Session = Depends(get_session)
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    branch = session.get(Branch, branch_id)
+    if branch is None:
+        return HTMLResponse("")
+    job = backups_service.latest_restore(session, branch_id)
+    active = bool(job and job.status in (RESTORE_QUEUED, RESTORE_RUNNING))
+    log_tail = (
+        _tail_lines(Path(job.log_path), 80)
+        if job and job.log_path
+        else "(waiting for worker...)"
+    )
+    return templates.TemplateResponse(
+        request,
+        "partials/restore_status.html",
+        {
+            "request": request,
+            "branch": branch,
+            "restore_job": job,
+            "restore_active": active,
+            "restore_log_tail": log_tail,
+        },
     )
 
 
@@ -658,6 +718,11 @@ def deploy_branch(
     branch = session.get(Branch, branch_id)
     if branch is None:
         return _back("/", "Branch not found")
+    if backups_service.active_restore(session, branch_id):
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "A database restore is queued/running; wait for it to finish",
+        )
     rebuild = rebuild_base == "1"
     build = Build(
         branch_id=branch_id,
@@ -681,6 +746,11 @@ def stop_branch(branch_id: int, request: Request, session: Session = Depends(get
     branch = session.get(Branch, branch_id)
     if branch is None:
         return _back("/", "Branch not found")
+    if backups_service.active_restore(session, branch_id):
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "A database restore is queued/running; wait for it to finish",
+        )
     docker_ctl.stop_container(branch.container_name)
     branch.status = "stopped"
     session.add(branch)
@@ -697,6 +767,11 @@ def start_branch(branch_id: int, request: Request, session: Session = Depends(ge
     branch = session.get(Branch, branch_id)
     if branch is None:
         return _back("/", "Branch not found")
+    if backups_service.active_restore(session, branch_id):
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "A database restore is queued/running; wait for it to finish",
+        )
     project = session.get(Project, branch.project_id)
     enterprise = bool(project and (project.enterprise_repo_url or "").strip())
     try:
@@ -842,6 +917,11 @@ def delete_branch(
         return _back("/", "Branch not found")
     if not has_role(user, "admin"):
         return _back(f"/branches/{branch_id}", "Only admins can delete branches")
+    if backups_service.active_restore(session, branch_id):
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "A database restore is queued/running; wait for it to finish",
+        )
     if confirm.strip() != branch.name:
         return _back(f"/branches/{branch_id}?tab=settings", "Type the branch name to confirm deletion")
     project_id = branch.project_id
@@ -860,6 +940,10 @@ def delete_branch(
         session.delete(backup)
     for build in session.exec(select(Build).where(Build.branch_id == branch_id)).all():
         session.delete(build)
+    for job in session.exec(
+        select(RestoreJob).where(RestoreJob.branch_id == branch_id)
+    ).all():
+        session.delete(job)
     session.delete(branch)
     session.add(Event(project_id=project_id, kind="info", message=f"Branch '{branch.name}' deleted"))
     session.commit()
@@ -952,11 +1036,37 @@ def restore_backup_route(
     branch = session.get(Branch, backup.branch_id)
     if confirm != "restore":
         return _back(f"/branches/{branch.id}?tab=backups", "Restore cancelled")
-    try:
-        backups_service.restore_backup(branch, backup)
-        return _back(f"/branches/{branch.id}?tab=backups", "Backup restored (container stopped - use Start or Deploy)")
-    except Exception as exc:  # noqa: BLE001
-        return _back(f"/branches/{branch.id}?tab=backups", f"Restore failed: {exc}")
+    if backups_service.active_restore(session, branch.id):
+        return _back(
+            f"/branches/{branch.id}?tab=backups",
+            "A database restore is already queued/running",
+        )
+    if session.exec(
+        select(Build).where(
+            Build.branch_id == branch.id,
+            Build.status.in_([BUILD_QUEUED, BUILD_RUNNING]),
+        )
+    ).first():
+        return _back(
+            f"/branches/{branch.id}?tab=backups",
+            "A build is queued/running; wait for it to finish before restoring",
+        )
+    job = RestoreJob(
+        branch_id=branch.id,
+        backup_id=backup.id,
+        kind="backup",
+        source_name=Path(backup.db_path).name,
+        status=RESTORE_QUEUED,
+        step="queued",
+    )
+    session.add(job)
+    branch.status = "restoring"
+    session.add(branch)
+    session.commit()
+    return _back(
+        f"/branches/{branch.id}?tab=backups",
+        f"Restore #{job.id} queued - watch progress below",
+    )
 
 
 @router.post("/branches/{branch_id}/backups/import")
@@ -980,7 +1090,25 @@ async def import_backup_route(
         )
     if confirm != "import":
         return _back(f"/branches/{branch_id}?tab=backups", "Import cancelled")
+    if backups_service.active_restore(session, branch_id):
+        await file.close()
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "A database restore is already queued/running",
+        )
+    if session.exec(
+        select(Build).where(
+            Build.branch_id == branch_id,
+            Build.status.in_([BUILD_QUEUED, BUILD_RUNNING]),
+        )
+    ).first():
+        await file.close()
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "A build is queued/running; wait for it to finish before importing",
+        )
     dest = backups_service.import_path(branch, file.filename or "backup")
+    queued = False
     total = 0
     try:
         with dest.open("wb") as output:
@@ -994,28 +1122,32 @@ async def import_backup_route(
                 output.write(chunk)
         if total == 0:
             raise PlatformError("The uploaded backup is empty")
-        label = backups_service.import_database(
-            branch, dest, file.filename or "backup"
+        job = RestoreJob(
+            branch_id=branch.id,
+            kind="import",
+            source_path=str(dest),
+            source_name=Path(file.filename or "backup").name[:120],
+            status=RESTORE_QUEUED,
+            step="queued",
         )
-        branch.status = "stopped"
+        session.add(job)
+        branch.status = "restoring"
         session.add(branch)
         session.commit()
+        queued = True
         return _back(
             f"/branches/{branch_id}?tab=backups",
-            f"{label} imported (container stopped - use Start or Deploy)",
+            f"Import #{job.id} queued - watch progress below",
         )
     except Exception as exc:  # noqa: BLE001
-        if docker_ctl.container_state(branch.container_name) != "running":
-            branch.status = "stopped"
-            session.add(branch)
-            session.commit()
         detail = str(exc).replace("\n", " ")[:300]
         return _back(
             f"/branches/{branch_id}?tab=backups", f"Import failed: {detail}"
         )
     finally:
         await file.close()
-        dest.unlink(missing_ok=True)
+        if not queued:
+            dest.unlink(missing_ok=True)
 
 
 @router.post("/backups/{backup_id}/delete")
@@ -1027,6 +1159,16 @@ def delete_backup_route(backup_id: int, request: Request, session: Session = Dep
     if backup is None:
         return _back("/", "Backup not found")
     branch_id = backup.branch_id
+    if session.exec(
+        select(RestoreJob).where(
+            RestoreJob.backup_id == backup_id,
+            RestoreJob.status.in_([RESTORE_QUEUED, RESTORE_RUNNING]),
+        )
+    ).first():
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "This backup is queued/running for a restore and cannot be deleted",
+        )
     backups_service.delete_backup(backup)
     return _back(f"/branches/{branch_id}?tab=backups", "Backup deleted")
 

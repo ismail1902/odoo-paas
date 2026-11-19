@@ -67,6 +67,7 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
 - **Backups and imports** — `pg_dump` + filestore tarball, download/restore.
   Admins can also upload a PostgreSQL `.dump`, `.sql`, `.sql.gz` or an Odoo
   `.zip` backup to replace a branch database (zip also restores the filestore).
+  Restores run in the background worker with a live log in the Backups tab.
   Retention: keep everything for 3 days, then 7 daily, 4 weekly, 3 monthly
   snapshots.
 - **Fleet dashboard** — project search, grid/list layouts, equal summary

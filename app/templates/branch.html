@@ -111,12 +111,14 @@
 </div>
 
 {% elif tab == 'backups' %}
+{% include "partials/restore_status.html" %}
 <div class="card">
   <div class="row space-between">
     <h3>Backups</h3>
     <div class="row gap">
       {% if user.role == 'admin' %}
-      <button type="button" data-open-import-backup>Import database</button>
+      <button type="button" data-open-import-backup
+              {% if restore_active %}disabled title="A restore is already running"{% endif %}>Import database</button>
       {% endif %}
       <form method="post" action="/branches/{{ branch.id }}/backups/create"><button class="primary">Create backup</button></form>
     </div>
@@ -145,7 +147,7 @@
           <form method="post" action="/backups/{{ backup.id }}/restore"
                 onsubmit="return confirm('Restore backup #{{ backup.id }} into {{ branch.name }}? The current database will be replaced.')">
             <input type="hidden" name="confirm" value="restore">
-            <button class="small-btn">Restore</button>
+            <button class="small-btn" {% if restore_active %}disabled title="A restore is already running"{% endif %}>Restore</button>
           </form>
           {% endif %}
           <form method="post" action="/backups/{{ backup.id }}/delete"

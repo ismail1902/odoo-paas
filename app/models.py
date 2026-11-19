@@ -29,6 +29,11 @@ BUILD_SUCCEEDED = "succeeded"
 BUILD_FAILED = "failed"
 BUILD_STOPPED = "stopped"
 
+RESTORE_QUEUED = "queued"
+RESTORE_RUNNING = "running"
+RESTORE_SUCCEEDED = "succeeded"
+RESTORE_FAILED = "failed"
+
 
 def _now() -> datetime:
     """Naive UTC timestamp (SQLModel stores timezone-free values)."""
@@ -71,7 +76,7 @@ class Branch(SQLModel, table=True):
     gevent_port: int = 0  # loopback-only port for websocket/longpolling
     domain: str = ""  # optional reverse-proxy hostname
     db_name: str = ""
-    status: str = "new"  # new|building|running|failed|stopped
+    status: str = "new"  # new|building|restoring|running|failed|stopped
     # Branch settings (the Settings tab)
     install_modules: str = ""  # comma-separated; empty => "base"
     tests_enabled: bool = True
@@ -108,6 +113,22 @@ class Backup(SQLModel, table=True):
     size_bytes: int = 0
     note: str = ""
     created_at: NaiveDatetime = Field(default_factory=_now)
+
+
+class RestoreJob(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    branch_id: int = Field(index=True, foreign_key="branch.id")
+    backup_id: Optional[int] = Field(default=None, foreign_key="backup.id")
+    kind: str = "import"  # import|backup
+    source_path: str = ""
+    source_name: str = ""
+    status: str = RESTORE_QUEUED  # queued|running|succeeded|failed
+    step: str = "queued"
+    error: str = ""
+    log_path: str = ""
+    created_at: NaiveDatetime = Field(default_factory=_now)
+    started_at: Optional[NaiveDatetime] = None
+    finished_at: Optional[NaiveDatetime] = None
 
 
 class Event(SQLModel, table=True):

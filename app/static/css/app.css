@@ -383,6 +383,7 @@ button, .button, .small-btn {
   font: inherit; text-decoration: none;
 }
 button:hover, .button:hover, .small-btn:hover { border-color: var(--accent-2); text-decoration: none; }
+button:disabled, .button:disabled, .small-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 button.primary, .primary { background: var(--accent); border-color: var(--accent); }
 button.primary:hover, .primary:hover { background: var(--accent-2); }
 .small-btn { padding: 4px 9px; font-size: 12px; }
@@ -403,7 +404,16 @@ button.primary:hover, .primary:hover { background: var(--accent-2); }
 .pill.running, .pill.succeeded { color: #b8f5cf; border-color: #2b6b43; background: #16351f; }
 .pill.building, .pill.queued, .pill.running-build { color: #f5e6b8; border-color: #6b5b2b; background: #352f16; }
 .pill.failed { color: #f5c6bf; border-color: #6b2b2b; background: #351616; }
+.pill.restoring { color: #f5e6b8; border-color: #6b5b2b; background: #352f16; }
 .pill.stopped, .pill.new { color: var(--muted); }
+.restore-panel { margin-bottom: 16px; }
+.restore-log {
+  max-height: 320px; overflow: auto; margin: 8px 0 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-2); color: var(--text);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
 
 /* board */
 .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
