@@ -57,3 +57,74 @@
     if (event.key === "Escape" && dialog.hasAttribute("open")) closeDialog();
   });
 })();
+
+/* Project search and grid/list view. */
+(function () {
+  "use strict";
+
+  var input = document.getElementById("project-search");
+  var grid = document.querySelector("[data-project-grid]");
+  if (!input || !grid) return;
+
+  var cards = Array.prototype.slice.call(grid.querySelectorAll("[data-project-card]"));
+  var count = document.getElementById("project-count");
+  var empty = document.getElementById("project-search-empty");
+  var viewButtons = document.querySelectorAll("[data-project-view]");
+  var storageKey = "odoo-paas-project-view";
+
+  function applyFilter() {
+    var query = input.value.trim().toLowerCase();
+    var visible = 0;
+    cards.forEach(function (card) {
+      var haystack = (card.getAttribute("data-search") || "").toLowerCase();
+      var match = !query || haystack.indexOf(query) !== -1;
+      card.hidden = !match;
+      if (match) visible += 1;
+    });
+    if (count) {
+      count.textContent = query ? visible + " of " + cards.length : cards.length + " total";
+    }
+    if (empty) empty.hidden = !query || visible !== 0;
+  }
+
+  function setView(view, persist) {
+    var list = view === "list";
+    grid.classList.toggle("project-list", list);
+    Array.prototype.forEach.call(viewButtons, function (button) {
+      var active = button.getAttribute("data-project-view") === view;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    if (persist) {
+      try {
+        localStorage.setItem(storageKey, view);
+      } catch (error) {
+        /* Storage can be unavailable in private browsing. */
+      }
+    }
+  }
+
+  input.addEventListener("input", applyFilter);
+  input.addEventListener("search", applyFilter);
+  input.addEventListener("change", applyFilter);
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && input.value) {
+      input.value = "";
+      applyFilter();
+    }
+  });
+  Array.prototype.forEach.call(viewButtons, function (button) {
+    button.addEventListener("click", function () {
+      setView(button.getAttribute("data-project-view"), true);
+    });
+  });
+
+  var savedView = "grid";
+  try {
+    savedView = localStorage.getItem(storageKey) || "grid";
+  } catch (error) {
+    /* Storage can be unavailable in private browsing. */
+  }
+  setView(savedView === "list" ? "list" : "grid", false);
+  applyFilter();
+})();

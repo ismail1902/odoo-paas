@@ -28,25 +28,41 @@
       <span class="stat-value">{{ totals.running }}</span>
       <span class="stat-label">Running</span>
     </div>
-    <div class="stat">
-      <span class="stat-value">{{ odoo_versions|length }}</span>
+    <div class="stat" title="{% if active_odoo_versions %}Active: {{ active_odoo_versions|join(', ') }}{% else %}No projects yet{% endif %}">
+      <span class="stat-value">{{ totals.odoo_versions }}</span>
       <span class="stat-label">Odoo versions</span>
     </div>
   </div>
 </section>
 
+{% if rows %}
+<div class="dashboard-toolbar">
+  <label class="project-search">
+    <span class="visually-hidden">Search projects</span>
+    <input id="project-search" type="search" placeholder="Search projects by name, slug or repository" autocomplete="off">
+  </label>
+  <div class="view-switch" role="group" aria-label="Project layout">
+    <button type="button" class="active" data-project-view="grid" aria-pressed="true" aria-label="Grid view" title="Grid view">&#9638;</button>
+    <button type="button" data-project-view="list" aria-pressed="false" aria-label="List view" title="List view">&#9776;</button>
+  </div>
+</div>
+{% endif %}
+
 <div class="dashboard-main">
   <section>
     <div class="section-head">
-      <h2>Projects</h2>
-      <span class="muted small">{{ totals.projects }} total</span>
+      <div class="section-title">
+        <h2>Projects</h2>
+        <span class="muted small" id="project-count" aria-live="polite">{{ totals.projects }} total</span>
+      </div>
     </div>
 
     {% if rows %}
-    <div class="project-grid">
+    <div class="project-grid" data-project-grid>
       {% for row in rows %}
       {% set p = row.project %}
-      <article class="project-card">
+      <article class="project-card" data-project-card
+               data-search="{{ (p.display_name ~ ' ' ~ p.slug ~ ' ' ~ (row.repo_display or '') ~ ' ' ~ (p.odoo_version or default_odoo_version) ~ ' ' ~ row.postgres_version)|lower }}">
         <div class="project-card-top">
           <div>
             <h3><a href="/projects/{{ p.id }}">{{ p.display_name }}</a></h3>
@@ -72,6 +88,10 @@
       </article>
       {% endfor %}
     </div>
+    <div class="empty-state search-empty" id="project-search-empty" hidden>
+      <strong>No matching projects</strong>
+      <div class="small">Try a different name, slug or repository.</div>
+    </div>
     {% else %}
     <div class="empty-state">
       <strong>No projects yet</strong>
@@ -81,24 +101,26 @@
     {% endif %}
   </section>
 
-  <aside class="card activity-panel">
+  <aside class="activity-column">
     <div class="section-head">
       <h2>Recent activity</h2>
       <span class="live-dot" aria-hidden="true"></span>
     </div>
-    <ul class="events compact">
-      {% for item in activity %}
-      <li>
-        <span class="kind {{ item.event.kind }}">{{ item.event.kind }}</span>
-        <span class="event-message small">{{ item.event.message[:140] }}{% if item.event.message|length > 140 %}…{% endif %}</span>
-        <div class="event-meta muted small">
-          {{ item.project.display_name if item.project else 'Unknown project' }} · {{ item.event.created_at.strftime('%m-%d %H:%M') }}
-        </div>
-      </li>
-      {% else %}
-      <li class="muted">No activity yet</li>
-      {% endfor %}
-    </ul>
+    <div class="card activity-panel">
+      <ul class="events compact">
+        {% for item in activity %}
+        <li>
+          <span class="kind {{ item.event.kind }}">{{ item.event.kind }}</span>
+          <span class="event-message small">{{ item.event.message[:140] }}{% if item.event.message|length > 140 %}…{% endif %}</span>
+          <div class="event-meta muted small">
+            {{ item.project.display_name if item.project else 'Unknown project' }} · {{ item.event.created_at.strftime('%m-%d %H:%M') }}
+          </div>
+        </li>
+        {% else %}
+        <li class="muted">No activity yet</li>
+        {% endfor %}
+      </ul>
+    </div>
   </aside>
 </div>
 

@@ -181,10 +181,18 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
                 "postgres_version": postgres.version_for(project),
             }
         )
+    active_odoo_versions = sorted(
+        {
+            project.odoo_version or settings.ODOO_VERSION
+            for project in projects
+        },
+        reverse=True,
+    )
     totals = {
         "projects": len(rows),
         "branches": sum(row["branch_count"] for row in rows),
         "running": sum(row["running"] for row in rows),
+        "odoo_versions": len(active_odoo_versions),
     }
     events = session.exec(
         select(Event).order_by(Event.id.desc()).limit(12)
@@ -209,6 +217,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             totals=totals,
             activity=activity,
             odoo_versions=odoo_versions,
+            active_odoo_versions=active_odoo_versions,
             postgres_versions=postgres.options(odoo_versions, available_postgres),
             default_odoo_version=settings.ODOO_VERSION,
             default_postgres_version=default_postgres_version,
