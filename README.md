@@ -91,7 +91,8 @@ MOCK_DOCKER=1 .venv/bin/uvicorn app.main:app --reload
 
 ## Server deployment
 
-Ubuntu 22.04/24.04, ≥ 4 GB RAM (8 GB recommended), ≥ 40 GB SSD:
+Ubuntu 22.04/24.04, ≥ 4 GB RAM (8 GB recommended), ≥ 60 GB SSD
+(all six base images use roughly 20 GB):
 
 ```bash
 scp -r odoo-paas root@SERVER:/root/
@@ -100,6 +101,10 @@ cd /root/odoo-paas
 sudo ./install.sh --public-host SERVER_IP \
      --admin-email you@example.com --admin-password 'change-me'
 ```
+
+The installer builds all supported Odoo base images by default (15.0–20.0),
+so the first install takes longer and uses roughly 20 GB for images. Limit
+that with `--odoo-versions "17.0 20.0"` if needed.
 
 Then open `http://SERVER_IP:8000`. To stop using IP:8000, sign in as an admin,
 open the topbar **Settings** gear, and add a control-plane domain. nginx and

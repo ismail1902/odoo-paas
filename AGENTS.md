@@ -35,12 +35,15 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    `docker_ctl.image_for(branch)` (`odoo-paas/base:<version>`). Never use
    `settings.BASE_IMAGE` directly for branch work; the project form offers
    `docker_ctl.list_base_versions()`.
-5. **Builds run one at a time** in a single worker thread
+6. **All supported base images are built on install.** `install.sh` defaults to
+   Odoo 15.0–20.0; keep that list in sync with `app/config.py` and
+   `.env.example`. `ODOO_VERSIONS` or `--odoo-versions` can limit the set.
+7. **Builds run one at a time** in a single worker thread
    (`app/worker.py`). Don't introduce parallel builds without redesigning
    state transitions (queued → running → succeeded/failed). Base-image
    rebuilds use the same queue via `Build.rebuild_base` and
    `docker_ctl.build_base_image`, so they are serialized too.
-6. **Databases are derived from names**: `paas_<project.slug>_<branch>` via
+8. **Databases are derived from names**: `paas_<project.slug>_<branch>` via
    `web._db_name()`. Don't rename a branch's DB independently or history is
    lost. A database belongs to exactly one Odoo series and one PostgreSQL
    container — never point two series at the same DB or move a DB between
@@ -54,7 +57,7 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    `app/postgres.py` and filters the New project dropdown. Every branch DB
    needs the `vector` extension for Odoo 19/20 AI; `ensure_database` enables
    it per container and `install.sh` seeds `template1` plus existing DBs.
-7. **Control-plane domain is separate from branch domains.** The admin
+9. **Control-plane domain is separate from branch domains.** The admin
    `/settings` page writes `control_plane_domain`, creates
    `/etc/nginx/conf.d/odoo-paas-control-plane.conf`, and — only after HTTPS is
    active — sets `HOST=127.0.0.1` in `.env` and restarts `odoo-paas`. The
@@ -62,7 +65,7 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    working nginx control-plane site; removing the domain must restore
    `HOST=0.0.0.0`. Branch domains remain in `Branch.domain` and
    `odoo-paas-branch-N.conf`.
-8. **No comments unless non-obvious.** Existing style: module docstrings +
+10. **No comments unless non-obvious.** Existing style: module docstrings +
    minimal inline comments. Match it.
 
 ## Layout

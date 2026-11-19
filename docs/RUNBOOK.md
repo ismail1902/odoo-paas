@@ -157,9 +157,13 @@ The Odoo version is chosen **per project** when it is created; branches copy
 it at creation. The dropdown lists every base image built on the host:
 
 ```bash
-sudo ./install.sh --odoo-versions "15.0 16.0 17.0 18.0 19.0 20.0"   # build series
-sudo ./install.sh --rebuild-base --odoo-versions "20.0"   # refresh one
+sudo ./install.sh                                           # all 15.0–20.0
+sudo ./install.sh --odoo-versions "17.0 20.0"               # build a subset
+sudo ./install.sh --rebuild-base --odoo-versions "20.0"     # refresh one
 ```
+
+A default install builds all six images (roughly 20 GB). Set
+`ODOO_VERSIONS` or pass `--odoo-versions` to limit the set.
 
 Per-series requirements (install.sh picks the base automatically):
 

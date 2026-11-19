@@ -7,7 +7,7 @@
 | OS | Ubuntu 22.04 or 24.04 (amd64/arm64) | Ubuntu 24.04 |
 | RAM | 4 GB | 8 GB+ (each running Odoo branch ≈ 300–600 MB) |
 | CPU | 2 vCPU | 4 vCPU |
-| Disk | 40 GB SSD | 80 GB+ (image ≈ 3 GB, each branch repo+venv ≈ 300–600 MB) |
+| Disk | 60 GB SSD | 100 GB+ (six base images ≈ 20 GB, each branch repo+venv ≈ 300–600 MB) |
 | Network | ports 22, 80, 443, 8000, 9000–9990 open | + ufw rules installed automatically |
 
 Docker, Python 3, PostgreSQL and the Odoo base image are installed/created by
@@ -40,18 +40,21 @@ sudo ./install.sh --public-host SERVER_IP \
    swaps the PG16 image in place (same major version, same volume); the
    `-trixie` tags match the current `postgres:16` image (glibc 2.41), while a
    volume created on bookworm can use `POSTGRES_IMAGE=pgvector/pgvector:pg16`.
-5. base image(s) `odoo-paas/base:<version>` — one per Odoo version
-   requested (`--odoo-versions "15.0 16.0 17.0 20.0"`; `--rebuild-base` to refresh).
-   Series >= 20 are built on `python:3.12-slim-bookworm` because Odoo
-   requires Python >= 3.12; older series use Debian's Python 3.11.
+5. base images `odoo-paas/base:<version>` — **all supported versions
+   15.0–20.0 by default**; use `--odoo-versions "17.0 20.0"` to build a subset
+   or `--rebuild-base` to refresh them (`--rebuild-base` without
+   `--odoo-versions` refreshes all). Series >= 20 are built on
+   `python:3.12-slim-bookworm` because Odoo requires Python >= 3.12; older
+   series use Debian's Python 3.11 (15/16 use 3.9).
 6. venv + `pip install -r requirements.txt`
 7. systemd unit `odoo-paas` enabled and started; ufw rules for 8000 and
    9000–9990 when ufw is active
 8. first admin user (only if none exists)
 
 Useful flags: `--public-host`, `--admin-email`, `--admin-password`,
-`--rebuild-base`, `--odoo-version 16.0` (single), `--odoo-versions "15.0 16.0 17.0 20.0"`
-(several), `--postgres-versions "15 16 17 18"` (shared PG/pgvector containers).
+`--rebuild-base`, `--odoo-version 16.0` (default for new projects),
+`--odoo-versions "15.0 16.0 17.0 20.0"` (limit which base images are built),
+`--postgres-versions "15 16 17 18"` (shared PG/pgvector containers).
 Env equivalents: `PUBLIC_HOST`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
 `ODOO_VERSION`, `ODOO_VERSIONS`, `POSTGRES_VERSIONS`, `PORT`,
 `POSTGRES_IMAGE` (PG16 image; defaults to a pgvector tag matching the

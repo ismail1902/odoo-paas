@@ -3,21 +3,21 @@
 #
 # Idempotent: safe to re-run after `git pull` to update the platform.
 #
-#   sudo ./install.sh                       install / update, autodetect host IP
+#   sudo ./install.sh                       install/update; builds all Odoo 15.0-20.0
 #   sudo ./install.sh --public-host 1.2.3.4
 #   sudo ./install.sh --admin-email me@example.com --admin-password 'secret'
-#   sudo ./install.sh --rebuild-base        rebuild the Odoo base image too
-#   sudo ./install.sh --odoo-versions "15.0 16.0 17.0 20.0"  build several versions
+#   sudo ./install.sh --rebuild-base        rebuild base image(s) too
+#   sudo ./install.sh --odoo-versions "15.0 16.0 17.0 20.0"  build selected versions
 #   sudo ./install.sh --wkhtmltopdf-deb URL extra .deb for arm64 PDF reports
 #   sudo ./install.sh --acme-email you@example.com  Let's Encrypt expiry contact
-#   sudo ./install.sh --postgres-versions "15 16"   shared PG/pgvector versions
+#   sudo ./install.sh --postgres-versions "15 16 17 18"  shared PG/pgvector versions
 #
 # What it does, in order:
 #   1. apt prerequisites + Docker (via get.docker.com when missing)
 #   2. copy the repository to /opt/odoo-paas (data stays in /var/lib/odoo-paas)
 #   3. create/refresh .env (secrets are only generated once)
 #   4. docker network odoo-paas + shared containers (PostgreSQL/pgvector, Mailpit)
-#   5. build the Odoo base image (odoo-paas/base:<version>)
+#   5. build all supported Odoo base images (or the versions selected above)
 #   6. Python venv + pip install -r requirements.txt
 #   7. systemd service (odoo-paas) + firewall rules for the port ranges
 #   8. seed the first admin user
@@ -28,6 +28,7 @@ TARGET_DIR=/opt/odoo-paas
 DATA_DIR=/var/lib/odoo-paas
 ENV_FILE="$TARGET_DIR/.env"
 ODOO_VERSION="${ODOO_VERSION:-17.0}"
+DEFAULT_ODOO_VERSIONS="15.0 16.0 17.0 18.0 19.0 20.0"
 PORT="${PORT:-8000}"
 GEVENT_PORT_RANGE_START="${GEVENT_PORT_RANGE_START:-10000}"
 GEVENT_PORT_RANGE_END="${GEVENT_PORT_RANGE_END:-10990}"
@@ -134,6 +135,7 @@ PG_PASSWORD=$PG_PASSWORD
 
 BASE_IMAGE=$BASE_IMAGE
 ODOO_VERSION=$ODOO_VERSION
+ODOO_VERSIONS=$DEFAULT_ODOO_VERSIONS
 WKHTMLTOPDF_DEB=$WKHTMLTOPDF_DEB
 MOCK_DOCKER=false
 WORKER_ENABLED=true
@@ -146,6 +148,8 @@ else
   log "Keeping existing $ENV_FILE"
   PG_PASSWORD="$(grep -m1 '^PG_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
   grep -q '^HOST=' "$ENV_FILE" || echo "HOST=0.0.0.0" >> "$ENV_FILE"
+  grep -q '^ODOO_VERSIONS=' "$ENV_FILE" \
+    || echo "ODOO_VERSIONS=$DEFAULT_ODOO_VERSIONS" >> "$ENV_FILE"
   for key in PG_CONTAINER_15 PG_CONTAINER_17 PG_CONTAINER_18; do
     value="${!key}"
     grep -q "^$key=" "$ENV_FILE" || echo "$key=$value" >> "$ENV_FILE"
@@ -158,6 +162,10 @@ else
       echo "ACME_EMAIL=$ACME_EMAIL" >> "$ENV_FILE"
     fi
   fi
+fi
+
+if [[ -z "$ODOO_VERSIONS_ARG" && -f "$ENV_FILE" ]]; then
+  ODOO_VERSIONS_ARG="$(grep -m1 '^ODOO_VERSIONS=' "$ENV_FILE" | cut -d= -f2- || true)"
 fi
 
 # ------------------------------------------------------------------ 4. containers
@@ -365,7 +373,8 @@ for pg_version in ${POSTGRES_VERSIONS//,/ }; do
 done
 
 # ------------------------------------------------------------------ 5. base image
-BUILD_VERSIONS="${ODOO_VERSIONS_ARG:-$ODOO_VERSION}"
+BUILD_VERSIONS="${ODOO_VERSIONS_ARG:-$DEFAULT_ODOO_VERSIONS}"
+BUILD_VERSIONS="${BUILD_VERSIONS//,/ }"
 for version in $BUILD_VERSIONS; do
   image="odoo-paas/base:$version"
   # Odoo >= 20 needs Python >= 3.12 -> official python image (same Debian base).
