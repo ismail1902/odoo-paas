@@ -19,6 +19,9 @@
       <button type="button" data-theme-choice="dark" title="Dark theme">Dark</button>
     </div>
     {% if user %}
+      {% if user.role == 'admin' %}
+      <a class="small-btn" href="/settings" title="Platform settings" aria-label="Platform settings">&#9881; Settings</a>
+      {% endif %}
       <span class="muted">{{ user.email }} · {{ user.role }}</span>
       <a href="/logout">Logout</a>
     {% endif %}

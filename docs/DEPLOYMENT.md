@@ -8,7 +8,7 @@
 | RAM | 4 GB | 8 GB+ (each running Odoo branch ≈ 300–600 MB) |
 | CPU | 2 vCPU | 4 vCPU |
 | Disk | 40 GB SSD | 80 GB+ (image ≈ 3 GB, each branch repo+venv ≈ 300–600 MB) |
-| Network | ports 22, 8000, 9000–9990 open | + ufw rules installed automatically |
+| Network | ports 22, 80, 443, 8000, 9000–9990 open | + ufw rules installed automatically |
 
 Docker, Python 3, PostgreSQL and the Odoo base image are installed/created by
 `install.sh`; nothing else is needed on a fresh server.
@@ -79,12 +79,41 @@ cd /opt/odoo-paas
    versions compatible with the selected Odoo series. The Git URL is optional
    — leave it empty to deploy base Odoo and add it later under **Project
    settings** (for example `https://github.com/acme/odoo-addons.git`).
-3. In GitHub: Settings → Webhooks → Payload URL
-   `http://SERVER_IP:8000/webhooks/github/<project_id>`, content type
+3. In GitHub: Settings → Webhooks → Payload URL shown on the project page
+   (`http://SERVER_IP:8000/webhooks/github/<project_id>` before a control-plane
+   domain, `https://<domain>/webhooks/github/<project_id>` after), content type
    `application/json`, secret = the value shown on the project page.
 4. Create a branch (git branch name + stage). The build starts automatically.
    Watch it under the branch's *History* tab / open the build for the live log.
 5. The Odoo URL appears on the board: `http://SERVER_IP:<port>`.
+
+### Control-plane domain and HTTPS
+
+To stop using `http://SERVER_IP:8000`, sign in as an admin and open the topbar
+**Settings** gear (`/settings`):
+
+1. Enter the domain that should serve the platform UI, e.g.
+   `paas.example.com`.
+2. Point its DNS A/AAAA record at the server and make sure ports 80 and 443 are
+   open on the host and in the cloud security list.
+3. Save. nginx writes `/etc/nginx/conf.d/odoo-paas-control-plane.conf`,
+   certbot obtains a Let's Encrypt certificate, and the platform schedules a
+   short restart with `HOST=127.0.0.1` in `.env`.
+4. After the restart, use `https://paas.example.com` and discard the IP:8000
+   URL. The browser session is host-specific, so sign in again on the new
+   domain.
+
+If certbot cannot issue the certificate yet (DNS not propagated, port 80
+blocked, rate limit), the domain remains HTTP-only and uvicorn stays on
+`0.0.0.0` so IP:8000 access is not lost. Fix the DNS/firewall issue and save
+the domain again to retry.
+
+Use **Disable domain** to remove the nginx site and restore `HOST=0.0.0.0`.
+The certificate stays on disk and can be reused. This setting is only for the
+control plane; Odoo branch domains remain under each branch's Settings tab.
+Update any GitHub webhook payload URLs to
+`https://<domain>/webhooks/github/<project_id>` after switching, because the
+old IP:8000 endpoint is no longer reachable.
 
 ### PostgreSQL compatibility
 

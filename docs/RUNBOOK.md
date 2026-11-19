@@ -29,6 +29,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Change modules installed on first init | branch → Settings → *Modules to install* **before the first build**; afterwards use `-u all` (toggle update_on_deploy) or the shell. |
 | Install a module later | shell → `odoo -d $PGDATABASE --no-http --stop-after-init -i <module>` (from the branch *Shell* tab). |
 | Update all modules after pulling code | branch → Settings → enable *Update modules on deploy* → Deploy. |
+| Change control-plane domain | topbar **Settings** gear → enter domain → save (nginx + certbot + loopback rebind). |
 | Take a backup now | branch → Backups → *Create backup* (or `manage backup-all`). |
 | Download a backup | branch → Backups → Download (db dump only; the filestore tarball sits next to it under `/var/lib/odoo-paas/backups/`). |
 | Restore a backup | branch → Backups → Restore (admin). Container stops; press Start when ready. |
@@ -181,6 +182,42 @@ Odoo X is not built on this host" — rebuild it or create the project on a
 different version. Existing databases are **not** migrated between Odoo
 series; export/import via standard Odoo upgrade tooling if ever needed, and
 never point two Odoo series at the same database.
+
+## Control-plane domain and bind address
+
+Admins use the topbar **Settings** gear (`/settings`). Saving a domain writes
+`/etc/nginx/conf.d/odoo-paas-control-plane.conf`, obtains a certificate with
+certbot, and changes `/opt/odoo-paas/.env`:
+
+```text
+HOST=127.0.0.1
+```
+
+The systemd unit starts uvicorn with `${HOST}`. On the next restart uvicorn
+only accepts connections from nginx on loopback; the public IP:8000 endpoint
+is closed. Sessions are host-specific, so users sign in again on the new
+domain. Removing the domain restores `HOST=0.0.0.0`, removes the nginx site,
+and makes IP:8000 available again after the restart.
+
+Check the current state:
+
+```bash
+grep '^HOST=' /opt/odoo-paas/.env
+ss -ltnp | grep ':8000'
+sudo nginx -t
+sudo systemctl status odoo-paas
+ls -l /etc/nginx/conf.d/odoo-paas-control-plane.conf
+```
+
+If HTTPS is still pending, the platform deliberately leaves `HOST=0.0.0.0`
+so IP access remains available. Fix DNS/ports and save the domain again.
+Do **not** manually set `HOST=127.0.0.1` without a working nginx control-plane
+site, or the UI will be unreachable from the network.
+
+The control-plane certificate is separate from branch certificates. Branch
+domains remain under each branch's **Settings** tab. After switching, update
+GitHub webhook payload URLs to the control-plane domain; the old IP:8000
+endpoint is closed.
 
 ## PostgreSQL containers and project choices
 

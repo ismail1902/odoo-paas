@@ -33,6 +33,11 @@
   `docker_ctl.ensure_database` re-ensures it on deploy.
 - Branch ports come from the pool `PORT_RANGE_START..PORT_RANGE_END`
   (default 9000–9990), one per branch, published on `0.0.0.0`.
+- The control plane can be published through nginx on its own domain. Once
+  HTTPS is active, `systemd/odoo-paas.service` starts uvicorn with `HOST` from
+  `.env` (`127.0.0.1` instead of `0.0.0.0`), so only nginx reaches it.
+  `/etc/nginx/conf.d/odoo-paas-control-plane.conf` is managed separately from
+  branch domain configs.
 
 ## State (SQLite via SQLModel)
 

@@ -54,7 +54,15 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    `app/postgres.py` and filters the New project dropdown. Every branch DB
    needs the `vector` extension for Odoo 19/20 AI; `ensure_database` enables
    it per container and `install.sh` seeds `template1` plus existing DBs.
-7. **No comments unless non-obvious.** Existing style: module docstrings +
+7. **Control-plane domain is separate from branch domains.** The admin
+   `/settings` page writes `control_plane_domain`, creates
+   `/etc/nginx/conf.d/odoo-paas-control-plane.conf`, and — only after HTTPS is
+   active — sets `HOST=127.0.0.1` in `.env` and restarts `odoo-paas`. The
+   systemd unit binds uvicorn to `${HOST}`. Never set loopback without a
+   working nginx control-plane site; removing the domain must restore
+   `HOST=0.0.0.0`. Branch domains remain in `Branch.domain` and
+   `odoo-paas-branch-N.conf`.
+8. **No comments unless non-obvious.** Existing style: module docstrings +
    minimal inline comments. Match it.
 
 ## Layout
@@ -75,7 +83,8 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/services/gitops.py` | git sync/checkout, commit metadata, webhook HMAC verify |
 | `app/services/backups.py` | dump/restore/retention (3d + 7/4/3 buckets) |
 | `app/services/monitor.py` | psutil host stats + container stats |
-| `app/services/nginx.py` | per-branch nginx config, Let's Encrypt, reload/rollback |
+| `app/services/nginx.py` | per-branch and control-plane nginx, Let's Encrypt, reload/rollback |
+| `app/services/control_plane.py` | control-plane domain setting, nginx/HTTPS apply, `HOST` rebind, restart scheduling |
 | `app/templates/` | base/login/dashboard/project/branch/build + `partials/` (htmx) |
 | `app/static/` | `css/app.css`, `js/theme.js`, `js/dashboard.js`, `js/terminal.js` (xterm.js), `js/monitor.js` (Chart.js polling) |
 | `docker/odoo-base/Dockerfile` | shared Odoo image; system-wide Odoo requirements |

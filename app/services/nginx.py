@@ -1,6 +1,8 @@
-"""Per-branch nginx reverse proxy and Let's Encrypt certificates.
+"""nginx reverse proxy and Let's Encrypt certificates.
 
-The proxy/websocket/SSL blocks follow Odoo's official Nginx HTTPS sample:
+This module manages both per-branch Odoo domains and the platform control-plane
+domain. The proxy/websocket/SSL blocks follow Odoo's official Nginx HTTPS
+sample:
 https://www.odoo.com/documentation/20.0/administration/on_premise/deploy.html#https
 """
 from __future__ import annotations
@@ -15,6 +17,7 @@ from app.errors import PlatformError
 
 CONFIG_DIR = Path("/etc/nginx/conf.d")
 WEBROOT = Path("/var/www/letsencrypt")
+CONTROL_PLANE_CONFIG = CONFIG_DIR / "odoo-paas-control-plane.conf"
 DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -266,6 +269,161 @@ def remove(branch) -> None:
     test = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
     if test.returncode != 0:
         path.write_text(old)
+        raise PlatformError(
+            "nginx config test failed: " + (test.stderr or test.stdout).strip()[-800:]
+        )
+    subprocess.run(["systemctl", "reload", "nginx"], capture_output=True, text=True)
+
+
+# --- Control plane --------------------------------------------------------------
+
+
+def control_plane_config_exists() -> bool:
+    return CONTROL_PLANE_CONFIG.exists()
+
+
+def control_plane_certificate_exists(domain: str) -> bool:
+    return bool(domain) and certificate_exists(domain)
+
+
+def _control_plane_proxy_locations() -> str:
+    headers = (
+        "        proxy_set_header Host $host;\n"
+        "        proxy_set_header X-Forwarded-Host $host;\n"
+        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+        "        proxy_set_header X-Forwarded-Proto $scheme;\n"
+        "        proxy_set_header X-Forwarded-Port $server_port;\n"
+        "        proxy_set_header X-Real-IP $remote_addr;\n"
+    )
+    return f"""
+    location /ws/ {{
+        proxy_pass http://odoo_paas_control;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade_control;
+{headers}        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }}
+
+    location / {{
+        proxy_pass http://odoo_paas_control;
+        proxy_redirect off;
+{headers}    }}
+"""
+
+
+def _render_control_plane(domain: str, ssl: bool) -> str:
+    upstream = (
+        "upstream odoo_paas_control { "
+        f"server 127.0.0.1:{settings.PORT}; }}\n"
+    )
+    upgrade_map = """map $http_upgrade $connection_upgrade_control {
+    default upgrade;
+    ''      close;
+}
+"""
+    challenge = (
+        "    location /.well-known/acme-challenge/ {\n"
+        "        root /var/www/letsencrypt;\n"
+        "    }\n"
+    )
+    common = f"""
+    server_name {domain};
+    client_max_body_size 200m;
+    proxy_read_timeout 720s;
+    proxy_connect_timeout 720s;
+    proxy_send_timeout 720s;
+"""
+    http_body = (
+        f"{challenge}\n    location / {{ return 301 https://$host$request_uri; }}"
+        if ssl
+        else challenge + _control_plane_proxy_locations()
+    )
+    http_block = f"""
+server {{
+    listen 80;
+{common}{http_body}
+}}
+"""
+    if not ssl:
+        return upstream + upgrade_map + http_block
+    tls_block = f"""
+server {{
+    listen 443 ssl;
+{common}    ssl_certificate /etc/letsencrypt/live/{domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{domain}/privkey.pem;
+    ssl_session_timeout 30m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    access_log /var/log/nginx/odoo-paas-control.access.log;
+    error_log /var/log/nginx/odoo-paas-control.error.log;
+    gzip_types text/css text/scss text/plain text/xml application/xml application/json application/javascript;
+    gzip on;
+{_control_plane_proxy_locations()}
+}}
+"""
+    return upstream + upgrade_map + http_block + tls_block
+
+
+def control_plane_provision(domain: str, email: str = "") -> tuple:
+    """Write the HTTP config, obtain a certificate, then enable HTTPS.
+
+    Returns ``(message, https_enabled)``.
+    """
+    if settings.MOCK_DOCKER:
+        return "mock mode: nginx config not written", False
+    if not available():
+        raise PlatformError("nginx is not installed on this host")
+    WEBROOT.mkdir(parents=True, exist_ok=True)
+    _write_and_reload(CONTROL_PLANE_CONFIG, _render_control_plane(domain, ssl=False))
+    if certificate_exists(domain):
+        _write_and_reload(CONTROL_PLANE_CONFIG, _render_control_plane(domain, ssl=True))
+        return "HTTPS is enabled", True
+    if not certbot_available():
+        return "HTTP is configured; certbot is not installed, so HTTPS was skipped", False
+    command = [
+        "certbot",
+        "certonly",
+        "--webroot",
+        "-w",
+        str(WEBROOT),
+        "-d",
+        domain,
+        "--non-interactive",
+        "--agree-tos",
+        "--deploy-hook",
+        "systemctl reload nginx",
+    ]
+    if (email or "").strip():
+        command += ["--email", email.strip()]
+    else:
+        command += ["--register-unsafely-without-email"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return "HTTP is configured; certbot timed out, so HTTPS is pending", False
+    if result.returncode != 0:
+        lines = (result.stderr or result.stdout).strip().splitlines()
+        detail = lines[-1] if lines else "certbot failed"
+        return f"HTTP is configured; HTTPS pending: {detail[:300]}", False
+    _write_and_reload(CONTROL_PLANE_CONFIG, _render_control_plane(domain, ssl=True))
+    return "HTTPS is enabled", True
+
+
+def control_plane_remove() -> None:
+    if not CONTROL_PLANE_CONFIG.exists():
+        return
+    if settings.MOCK_DOCKER or not available():
+        CONTROL_PLANE_CONFIG.unlink(missing_ok=True)
+        return
+    old = CONTROL_PLANE_CONFIG.read_text()
+    CONTROL_PLANE_CONFIG.unlink()
+    test = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
+    if test.returncode != 0:
+        CONTROL_PLANE_CONFIG.write_text(old)
         raise PlatformError(
             "nginx config test failed: " + (test.stderr or test.stdout).strip()[-800:]
         )

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Platform settings · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Platform settings</h1>
+    <div class="muted small">Control plane domain, HTTPS and bind address. Branch Odoo domains are configured per branch.</div>
+  </div>
+  <a class="button" href="/">← Dashboard</a>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>Control plane domain</h3>
+    {% if status.domain %}
+    <p class="small">
+      Served at
+      <a href="{{ status.public_url }}" target="_blank" rel="noopener">{{ status.public_url }}</a>.
+    </p>
+    {% else %}
+    <p class="small muted">
+      The control plane is currently reached at
+      <a href="{{ status.ip_url }}">{{ status.ip_url }}</a>.
+    </p>
+    {% endif %}
+
+    <form method="post" action="/settings" class="stack">
+      <label>Domain
+        <input name="domain" value="{{ status.domain }}" placeholder="paas.example.com" required>
+      </label>
+      <p class="muted small">
+        Enter only the hostname, without <code>https://</code> or a path. DNS must point
+        at this server, and ports 80 and 443 must be reachable.
+      </p>
+      <button class="primary" type="submit">
+        {{ 'Save and retry HTTPS' if status.domain else 'Save and configure nginx' }}
+      </button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Current status</h3>
+    <table class="table">
+      <tbody>
+        <tr>
+          <th>Domain</th>
+          <td>{{ status.domain or 'not configured' }}</td>
+        </tr>
+        <tr>
+          <th>HTTPS</th>
+          <td>
+            {% if status.https %}certificate active{% elif status.domain %}pending / HTTP only{% else %}not configured{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>nginx site</th>
+          <td>{{ 'configured' if status.config else 'not configured' }}</td>
+        </tr>
+        <tr>
+          <th>Bind in .env</th>
+          <td><code>{{ status.bind_host }}:{{ port }}</code></td>
+        </tr>
+        <tr>
+          <th>Running process</th>
+          <td><code>{{ status.runtime_host }}:{{ port }}</code></td>
+        </tr>
+        <tr>
+          <th>Let's Encrypt email</th>
+          <td>{{ status.acme_email or 'not set (certbot registers without email)' }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    {% if status.domain and status.https %}
+    <p class="small">
+      nginx terminates HTTPS and proxies to <code>127.0.0.1:{{ port }}</code>.
+      uvicorn is bound to loopback, so the raw IP:port endpoint is not exposed.
+    </p>
+    {% elif status.domain %}
+    <p class="small">
+      The domain is configured over HTTP, but HTTPS is still pending. Until the
+      certificate is issued, uvicorn stays on <code>0.0.0.0</code> so IP:port
+      access remains available. Re-save the domain to retry certbot.
+      If DNS is not pointing at this server yet, fix it first.
+    </p>
+    {% elif status.bind_host == '127.0.0.1' %}
+    <p class="small danger-text">
+      The control plane is configured to listen on loopback without a domain.
+      Add a domain or restore <code>HOST=0.0.0.0</code> before restarting.
+    </p>
+    {% else %}
+    <p class="small">
+      Add a domain to put nginx in front of the control plane. Once HTTPS is
+      active, the platform switches uvicorn to <code>127.0.0.1</code> and the
+      server IP:port stops serving the UI.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h3>DNS checklist</h3>
+  <ol class="small">
+    <li>Create an <strong>A</strong> (or <strong>AAAA</strong>) record for the domain pointing to <code>{{ public_host }}</code>.</li>
+    <li>Open ports <strong>80</strong> and <strong>443</strong> on the host firewall and the cloud security list.</li>
+    <li>Save the domain here. nginx is configured automatically and certbot obtains the certificate.</li>
+    <li>After the automatic restart, use <code>https://{{ status.domain or 'your-domain' }}</code> instead of the IP and port.</li>
+  </ol>
+  <p class="muted small">
+    This setting only affects the control plane. Odoo branch domains, including
+    their own certificates and websocket routing, remain under branch
+    <strong>Settings</strong>. After switching, update GitHub webhook payload
+    URLs to the new control-plane domain; the old IP:8000 endpoint is closed.
+  </p>
+</div>
+
+{% if status.domain %}
+<div class="card">
+  <h3>Disable domain</h3>
+  <p class="small muted">
+    Removes the control-plane nginx site, restores <code>HOST=0.0.0.0</code>, and
+    makes the IP:port URL available again. The certificate is kept on disk.
+  </p>
+  <form method="post" action="/settings" class="stack">
+    <input type="hidden" name="action" value="remove">
+    <label>Type <code>remove</code> to confirm
+      <input name="confirm" placeholder="remove" required>
+    </label>
+    <button class="danger-btn" type="submit">Disable domain and restore IP access</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

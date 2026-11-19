@@ -8,12 +8,13 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=/opt/odoo-paas
+Environment=HOST=0.0.0.0
 EnvironmentFile=/opt/odoo-paas/.env
 # Root is required: the worker talks to /var/run/docker.sock, writes host
 # directories under DATA_DIR and runs `docker exec` against the shared
 # PostgreSQL container.
 User=root
-ExecStart=/opt/odoo-paas/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+ExecStart=/opt/odoo-paas/.venv/bin/uvicorn app.main:app --host ${HOST} --port ${PORT} --timeout-graceful-shutdown 5
 Restart=always
 RestartSec=3
 TimeoutStopSec=30

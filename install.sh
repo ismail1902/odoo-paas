@@ -145,6 +145,7 @@ EOF
 else
   log "Keeping existing $ENV_FILE"
   PG_PASSWORD="$(grep -m1 '^PG_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+  grep -q '^HOST=' "$ENV_FILE" || echo "HOST=0.0.0.0" >> "$ENV_FILE"
   for key in PG_CONTAINER_15 PG_CONTAINER_17 PG_CONTAINER_18; do
     value="${!key}"
     grep -q "^$key=" "$ENV_FILE" || echo "$key=$value" >> "$ENV_FILE"

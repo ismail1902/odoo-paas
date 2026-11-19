@@ -35,8 +35,13 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
   `odoo-paas/base:<version>` from the latest Odoo source for the selected
   version, runs `-u all` when the database exists, and redeploys the branch
   in one serialized build.
-- **Custom domains and HTTPS.** With Proxy mode enabled, each branch can
-  have a domain. nginx is configured automatically (including the
+- **Control-plane domain and HTTPS.** An admin-only gear button in the topbar
+  opens platform settings. Enter a domain and the platform writes the nginx
+  site, obtains a Let's Encrypt certificate, and rebinds uvicorn to
+  `127.0.0.1` so the raw IP:8000 endpoint is no longer exposed. Removing the
+  domain restores `0.0.0.0` and IP access.
+- **Custom domains and HTTPS for branches.** With Proxy mode enabled, each
+  branch can have a domain. nginx is configured automatically (including the
   websocket/gevent upstream) and Let's Encrypt certificates are issued and
   renewed with certbot.
 - **Push-to-deploy.** GitHub webhooks (HMAC-verified) trigger builds; a manual
@@ -96,7 +101,10 @@ sudo ./install.sh --public-host SERVER_IP \
      --admin-email you@example.com --admin-password 'change-me'
 ```
 
-Then open `http://SERVER_IP:8000`. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Then open `http://SERVER_IP:8000`. To stop using IP:8000, sign in as an admin,
+open the topbar **Settings** gear, and add a control-plane domain. nginx and
+Let's Encrypt are configured automatically; uvicorn then listens only on
+`127.0.0.1`. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Using it
 

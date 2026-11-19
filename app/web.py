@@ -48,7 +48,7 @@ from app.models import (
 )
 from app.ports import allocate_gevent_port, allocate_port
 from app.services import backups as backups_service
-from app.services import docker_ctl, gitops, monitor, nginx
+from app.services import control_plane, docker_ctl, gitops, monitor, nginx
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -214,6 +214,71 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             default_postgres_version=default_postgres_version,
         ),
     )
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def platform_settings_page(
+    request: Request, session: Session = Depends(get_session)
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    if not has_role(user, "admin"):
+        return _back("/", "Only admins can change platform settings")
+    return templates.TemplateResponse(
+        request,
+        "platform_settings.html",
+        _ctx(
+            request,
+            user,
+            status=control_plane.status(session, request),
+            port=settings.PORT,
+        ),
+    )
+
+
+@router.post("/settings")
+def platform_settings_save(
+    request: Request,
+    action: str = Form("save"),
+    domain: str = Form(""),
+    confirm: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    if not has_role(user, "admin"):
+        return _back("/", "Only admins can change platform settings")
+    try:
+        if action == "remove":
+            if confirm.strip() != "remove":
+                return _back(
+                    "/settings", "Type 'remove' to confirm disabling the domain"
+                )
+            result = control_plane.remove_domain(
+                session, request.url.hostname or ""
+            )
+        else:
+            result = control_plane.apply_domain(
+                session, domain, settings.ACME_EMAIL
+            )
+        session.commit()
+    except PlatformError as exc:
+        session.rollback()
+        return _back("/settings", str(exc))
+    if result.get("restart"):
+        return templates.TemplateResponse(
+            request,
+            "platform_settings_applying.html",
+            _ctx(
+                request,
+                user,
+                target_url=result["target"],
+                message=result["message"],
+            ),
+        )
+    return _back("/settings", result["message"])
 
 
 @router.post("/projects")
@@ -394,7 +459,10 @@ def project_page(project_id: int, request: Request, session: Session = Depends(g
         .order_by(Event.id.desc())
         .limit(15)
     ).all()
-    webhook_url = f"http://{settings.PUBLIC_HOST or request.url.hostname}:{settings.PORT}/webhooks/github/{project.id}"
+    webhook_url = (
+        f"{control_plane.public_url(session, request)}"
+        f"/webhooks/github/{project.id}"
+    )
     return templates.TemplateResponse(
         request,
         "project.html",

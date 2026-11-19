@@ -85,8 +85,10 @@ missing) and from git (`.gitignore`).
 
 ## Hardening checklist
 
-- [ ] `ufw`: restrict :8000 to your office/VPN IPs; leave 9000–9990 open only
-      if branch Odoos are meant to be public.
+- [ ] Put the control plane behind a domain/HTTPS from the topbar Settings
+      page; after the automatic rebind it listens only on `127.0.0.1`. If you
+      keep IP:8000, restrict it with `ufw` to your office/VPN IPs. Leave
+      9000–9990 open only if branch Odoos are meant to be public.
 - [ ] Strong admin password; no shared accounts; create separate users.
 - [ ] `.env` mode 600, owned by root (install.sh does this).
 - [ ] Keep the host patched; `sudo ./install.sh --rebuild-base` for Odoo

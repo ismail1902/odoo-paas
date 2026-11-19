@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Applying settings · {{ app_name }}{% endblock %}
+{% block head %}
+<meta http-equiv="refresh" content="10;url={{ target_url }}">
+{% endblock %}
+{% block content %}
+<div class="card">
+  <h3>Applying control-plane settings</h3>
+  <p>{{ message }}</p>
+  <p class="small muted">
+    The service restarts briefly so the new bind address takes effect. You will be
+    redirected to <a href="{{ target_url }}">{{ target_url }}</a>. The control-plane
+    URL changed, so you may need to sign in again.
+  </p>
+  <p><a class="button primary" href="{{ target_url }}">Continue now</a></p>
+</div>
+{% endblock %}
