@@ -109,7 +109,9 @@ that with `--odoo-versions "17.0 20.0"` if needed.
 Then open `http://SERVER_IP:8000`. To stop using IP:8000, sign in as an admin,
 open the topbar **Settings** gear, and add a control-plane domain. nginx and
 Let's Encrypt are configured automatically; uvicorn then listens only on
-`127.0.0.1`. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+`127.0.0.1`. To remove the platform later, use `sudo ./uninstall.sh`
+(keeps data) or `sudo ./uninstall.sh --purge` (full wipe); preview with
+`--dry-run`. Full details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Using it
 
@@ -143,6 +145,7 @@ app/
 docker/odoo-base/Dockerfile   shared Odoo image (odoo-paas/base:<version>)
 systemd/odoo-paas.service     production unit
 install.sh                    idempotent server installer
+uninstall.sh                  safe uninstaller (keeps data unless --purge)
 docs/                         ARCHITECTURE, DEPLOYMENT, RUNBOOK, API, SECURITY
 AGENTS.md                     guide for AI agents working on this repo
 ```

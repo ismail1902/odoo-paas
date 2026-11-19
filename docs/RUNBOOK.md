@@ -30,6 +30,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Install a module later | shell → `odoo -d $PGDATABASE --no-http --stop-after-init -i <module>` (from the branch *Shell* tab). |
 | Update all modules after pulling code | branch → Settings → enable *Update modules on deploy* → Deploy. |
 | Change control-plane domain | topbar **Settings** gear → enter domain → save (nginx + certbot + loopback rebind). |
+| Uninstall platform | `sudo ./uninstall.sh` (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); `--dry-run` previews. |
 | Take a backup now | branch → Backups → *Create backup* (or `manage backup-all`). |
 | Download a backup | branch → Backups → Download (db dump only; the filestore tarball sits next to it under `/var/lib/odoo-paas/backups/`). |
 | Restore a backup | branch → Backups → Restore (admin). Container stops; press Start when ready. |

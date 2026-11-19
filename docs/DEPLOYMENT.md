@@ -325,12 +325,35 @@ runs it without Docker for UI work (macOS default).
 
 ## Uninstall
 
+Use the uninstaller from the repository (or from `/opt/odoo-paas`):
+
 ```bash
-systemctl disable --now odoo-paas
-rm /etc/systemd/system/odoo-paas.service
-docker rm -f odoo-paas-pg odoo-paas-pg15 odoo-paas-pg17 odoo-paas-pg18 \
-  odoo-paas-mailpit $(docker ps -aq -f name=odoo-paas-branch-)
-docker volume rm odoo-paas-pgdata odoo-paas-pg15data odoo-paas-pg17data \
-  odoo-paas-pg18data   # destroys ALL branch databases
-rm -rf /opt/odoo-paas /var/lib/odoo-paas
+sudo ./uninstall.sh --dry-run   # print the plan, change nothing
+sudo ./uninstall.sh             # remove the app; keep databases and backups
+sudo ./uninstall.sh --purge     # remove app + databases + backups/builds
 ```
+
+The default is deliberately non-destructive: it removes the systemd unit,
+nginx control/branch sites, platform containers/network, and `/opt/odoo-paas`,
+but keeps PostgreSQL volumes, `/var/lib/odoo-paas` (state, builds, backups) and
+Let's Encrypt certificates. Re-running `install.sh` can rebuild the platform
+around the preserved data. Branch domains may need to be saved again to
+recreate their nginx configs.
+
+`--purge` also deletes the PostgreSQL volumes, `/var/lib/odoo-paas`, and the
+`odoo-paas/base:*` images. Keep images for a faster reinstall with:
+
+```bash
+sudo ./uninstall.sh --purge --keep-images
+```
+
+Certificates are kept unless you explicitly ask to remove them:
+
+```bash
+sudo ./uninstall.sh --delete-certificates
+```
+
+Use `--yes` for automation (no prompt). The script does **not** remove system
+packages (Docker, nginx, certbot), firewall rules, `/var/www/letsencrypt`, or
+source copies outside `/opt/odoo-paas` (for example `/root/odoo-paas`). Take a
+backup before `--purge` if you may need the data.

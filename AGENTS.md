@@ -92,7 +92,8 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/static/` | `css/app.css`, `js/theme.js`, `js/dashboard.js`, `js/terminal.js` (xterm.js), `js/monitor.js` (Chart.js polling) |
 | `docker/odoo-base/Dockerfile` | shared Odoo image; system-wide Odoo requirements |
 | `install.sh` | idempotent server installer (keep it idempotent!) |
-| `systemd/odoo-paas.service` | production unit, runs as root, `${PORT}` from `.env` |
+| `uninstall.sh` | safe uninstaller; keeps data unless `--purge` |
+| `systemd/odoo-paas.service` | production unit, runs as root, `${HOST}`/`${PORT}` from `.env` |
 
 ## Dev workflow (macOS/Linux)
 
@@ -185,6 +186,9 @@ There is no test suite; verify by:
 - WebSocket shell needs the `docker` SDK exec socket
   (`terminal._socket._sock`); this is a private API but stable across the
   pinned `docker>=7.1,<8`.
+- `uninstall.sh` is non-destructive by default: it keeps PostgreSQL volumes,
+  `/var/lib/odoo-paas` and certificates. Only `--purge` may delete data.
+  `--dry-run` must remain side-effect free.
 - `install.sh` keeps an existing `.env` (secrets must not regenerate on
   update): its internal rsync excludes `.env .venv var .git __pycache__` —
   never remove `.env` from that exclude list.
@@ -198,4 +202,5 @@ There is no test suite; verify by:
 3. Docs updated when behavior/settings/routes change (README table,
    docs/API.md for endpoints, docs/RUNBOOK.md for ops, this file for
    invariants).
-4. `install.sh` still idempotent if touched (`bash -n install.sh` minimum).
+4. `install.sh`/`uninstall.sh` still syntax-clean and idempotent
+   (`bash -n` minimum); `uninstall.sh --dry-run` must change nothing.
