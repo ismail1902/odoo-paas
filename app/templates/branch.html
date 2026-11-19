@@ -11,6 +11,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
 <script src="/static/js/monitor.js" defer></script>
 {% endif %}
+{% if tab == 'backups' %}
+<script src="/static/js/backups.js" defer></script>
+{% endif %}
 {% endblock %}
 {% block content %}
 <div class="page-head">
@@ -111,9 +114,22 @@
 <div class="card">
   <div class="row space-between">
     <h3>Backups</h3>
-    <form method="post" action="/branches/{{ branch.id }}/backups/create"><button class="primary">Create backup</button></form>
+    <div class="row gap">
+      {% if user.role == 'admin' %}
+      <button type="button" data-open-import-backup>Import database</button>
+      {% endif %}
+      <form method="post" action="/branches/{{ branch.id }}/backups/create"><button class="primary">Create backup</button></form>
+    </div>
   </div>
   <p class="muted small">Retention: newest 3 days kept, then 7 daily + 4 weekly + 3 monthly. Files live in the platform data directory.</p>
+  {% if user.role == 'admin' %}
+  <p class="muted small">
+    Import accepts PostgreSQL <code>.dump</code>/<code>.backup</code>,
+    <code>.sql</code>, <code>.sql.gz</code> or an Odoo <code>.zip</code>
+    backup (maximum 2 GB). It replaces the branch database; a zip also
+    replaces the filestore. The container stops after import.
+  </p>
+  {% endif %}
   <table class="table small">
     <thead><tr><th>#</th><th>Kind</th><th>Created</th><th>Size</th><th></th></tr></thead>
     <tbody>
@@ -144,6 +160,45 @@
     </tbody>
   </table>
 </div>
+
+{% if user.role == 'admin' %}
+<dialog class="modal" id="import-backup-dialog" aria-labelledby="import-backup-title">
+  <form method="post"
+        action="/branches/{{ branch.id }}/backups/import"
+        enctype="multipart/form-data"
+        class="modal-form"
+        data-import-confirm="Import this database into {{ branch.name }}? The current database will be replaced and the container stopped.">
+    <div class="modal-head">
+      <div>
+        <h2 id="import-backup-title">Import database</h2>
+        <p class="muted small">Upload a dump or an Odoo backup zip.</p>
+      </div>
+      <button type="button" class="modal-close" data-close-import-backup aria-label="Close">&times;</button>
+    </div>
+    <div class="stack">
+      <label>Backup file
+        <input type="file" name="file" required
+               accept=".dump,.backup,.sql,.gz,.zip,application/zip,application/gzip">
+      </label>
+      <p class="muted small">
+        Supported: PostgreSQL custom dump (<code>.dump</code>/<code>.backup</code>),
+        plain SQL (<code>.sql</code>), gzipped SQL (<code>.sql.gz</code>) or an
+        Odoo backup zip. Maximum 2 GB. A zip restores its filestore too;
+        other formats restore the database only.
+      </p>
+      <p class="muted small danger-text">
+        This replaces the current database. Take a backup first if you may need it.
+        The dump must match this branch's Odoo and PostgreSQL versions.
+      </p>
+    </div>
+    <input type="hidden" name="confirm" value="import">
+    <div class="row gap modal-actions">
+      <button class="primary" type="submit">Import and restore</button>
+      <button type="button" class="button" data-close-import-backup>Cancel</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
 
 {% elif tab == 'monitor' %}
 {% include "partials/monitor.html" %}

@@ -64,8 +64,11 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
   exec), Backups (create/download/restore, Odoo.sh-style retention), Monitor
   (live CPU/RAM/network/disk charts, disk gauge and generated insights),
   Settings.
-- **Backups** — `pg_dump` + filestore tarball. Retention: keep everything for
-  3 days, then 7 daily, 4 weekly, 3 monthly snapshots.
+- **Backups and imports** — `pg_dump` + filestore tarball, download/restore.
+  Admins can also upload a PostgreSQL `.dump`, `.sql`, `.sql.gz` or an Odoo
+  `.zip` backup to replace a branch database (zip also restores the filestore).
+  Retention: keep everything for 3 days, then 7 daily, 4 weekly, 3 monthly
+  snapshots.
 - **Fleet dashboard** — project search, grid/list layouts, equal summary
   cards, branch/running counts and a global recent-activity feed.
 - **Light, dark or system theme** — persistent per browser, switchable from

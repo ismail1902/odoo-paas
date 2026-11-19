@@ -330,7 +330,7 @@ def _render_control_plane(domain: str, ssl: bool) -> str:
     )
     common = f"""
     server_name {domain};
-    client_max_body_size 200m;
+    client_max_body_size 3g;
     proxy_read_timeout 720s;
     proxy_connect_timeout 720s;
     proxy_send_timeout 720s;

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -957,6 +957,65 @@ def restore_backup_route(
         return _back(f"/branches/{branch.id}?tab=backups", "Backup restored (container stopped - use Start or Deploy)")
     except Exception as exc:  # noqa: BLE001
         return _back(f"/branches/{branch.id}?tab=backups", f"Restore failed: {exc}")
+
+
+@router.post("/branches/{branch_id}/backups/import")
+async def import_backup_route(
+    branch_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    confirm: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    branch = session.get(Branch, branch_id)
+    if branch is None:
+        return _back("/", "Branch not found")
+    if not has_role(user, "admin"):
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            "Only admins can import databases",
+        )
+    if confirm != "import":
+        return _back(f"/branches/{branch_id}?tab=backups", "Import cancelled")
+    dest = backups_service.import_path(branch, file.filename or "backup")
+    total = 0
+    try:
+        with dest.open("wb") as output:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > backups_service.IMPORT_MAX_BYTES:
+                    raise PlatformError("Backup is too large (maximum 2 GB)")
+                output.write(chunk)
+        if total == 0:
+            raise PlatformError("The uploaded backup is empty")
+        label = backups_service.import_database(
+            branch, dest, file.filename or "backup"
+        )
+        branch.status = "stopped"
+        session.add(branch)
+        session.commit()
+        return _back(
+            f"/branches/{branch_id}?tab=backups",
+            f"{label} imported (container stopped - use Start or Deploy)",
+        )
+    except Exception as exc:  # noqa: BLE001
+        if docker_ctl.container_state(branch.container_name) != "running":
+            branch.status = "stopped"
+            session.add(branch)
+            session.commit()
+        detail = str(exc).replace("\n", " ")[:300]
+        return _back(
+            f"/branches/{branch_id}?tab=backups", f"Import failed: {detail}"
+        )
+    finally:
+        await file.close()
+        dest.unlink(missing_ok=True)
 
 
 @router.post("/backups/{backup_id}/delete")

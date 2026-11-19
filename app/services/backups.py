@@ -7,9 +7,13 @@ Retention (approximation of the Odoo.sh policy, see docs/RUNBOOK.md):
 """
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import stat
 import tarfile
 import time
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Set
@@ -27,9 +31,20 @@ DAILY_KEEP = 7
 WEEKLY_KEEP = 4
 MONTHLY_KEEP = 3
 
+IMPORT_MAX_BYTES = 2 * 1024**3
+IMPORT_MAX_EXTRACTED_BYTES = 6 * 1024**3
+
 
 def backup_dir(branch) -> Path:
     return settings.BACKUP_ROOT / f"project-{branch.project_id}" / f"branch-{branch.id}"
+
+
+def import_path(branch, filename: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(filename or "backup").name)[:80]
+    safe = safe or "backup"
+    out = settings.BACKUP_ROOT / "imports"
+    out.mkdir(parents=True, exist_ok=True)
+    return out / f"branch-{branch.id}-{time.time_ns()}-{safe}"
 
 
 def create_backup(branch, *, kind: str = "manual", note: str = "") -> Backup:
@@ -119,6 +134,118 @@ def _select_keep(backups: list) -> Set[int]:
     return keep
 
 
+def _import_format(src: Path) -> str:
+    with src.open("rb") as fh:
+        magic = fh.read(8)
+    if magic[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
+        return "zip"
+    if magic[:2] == b"\x1f\x8b":
+        return "sql.gz"
+    if magic[:5] == b"PGDMP":
+        return "pgdump"
+    if b"\x00" in magic:
+        raise PlatformError(
+            "Unsupported backup format. Use a PostgreSQL .dump, .sql, .sql.gz or Odoo .zip file."
+        )
+    return "sql"
+
+
+def _extract_odoo_zip(src: Path, dest: Path) -> tuple:
+    with zipfile.ZipFile(src) as archive:
+        infos = archive.infolist()
+        if not any(
+            info.filename == "dump.sql" and not info.is_dir() for info in infos
+        ):
+            raise PlatformError("The zip does not contain a dump.sql file")
+        total = sum(info.file_size for info in infos)
+        if total > IMPORT_MAX_EXTRACTED_BYTES:
+            raise PlatformError("The extracted backup is too large (max 6 GB)")
+        root = dest.resolve()
+        for info in infos:
+            name = info.filename
+            if name != "dump.sql" and not name.startswith("filestore/"):
+                continue
+            if name.startswith(("/", "\\")) or ".." in Path(name).parts:
+                raise PlatformError("The zip contains an unsafe path")
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode):
+                raise PlatformError("The zip contains a symbolic link")
+            target = (dest / name).resolve()
+            if target != root and not str(target).startswith(str(root) + os.sep):
+                raise PlatformError("The zip contains an unsafe path")
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+    dump_path = dest / "dump.sql"
+    filestore = dest / "filestore"
+    return dump_path, (filestore if filestore.exists() else None)
+
+
+def _import_zip(branch, src: Path) -> None:
+    work = settings.BACKUP_ROOT / "imports" / f"extract-{time.time_ns()}"
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        dump_path, filestore = _extract_odoo_zip(src, work)
+        docker_ctl.restore_sql_database(
+            branch.db_name,
+            dump_path,
+            container=docker_ctl.postgres_container(branch),
+        )
+        if filestore is not None:
+            dest = (
+                docker_ctl.filestore_dir(branch)
+                / "filestore"
+                / branch.db_name
+            )
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.move(str(filestore), str(dest))
+            docker_ctl.make_tree_container_writable(dest)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def import_database(branch, src: Path, original_name: str) -> str:
+    """Restore an uploaded PostgreSQL/Odoo backup into a branch."""
+    fmt = _import_format(src)
+    docker_ctl.stop_container(docker_ctl.container_name(branch))
+    if fmt == "zip":
+        _import_zip(branch, src)
+        label = "Odoo zip"
+    elif fmt == "pgdump":
+        docker_ctl.restore_database(
+            branch.db_name,
+            src,
+            container=docker_ctl.postgres_container(branch),
+        )
+        label = "PostgreSQL dump"
+    else:
+        docker_ctl.restore_sql_database(
+            branch.db_name,
+            src,
+            container=docker_ctl.postgres_container(branch),
+            compressed=fmt == "sql.gz",
+        )
+        label = "SQL dump"
+    with session_scope() as session:
+        session.add(
+            Event(
+                project_id=branch.project_id,
+                branch_id=branch.id,
+                kind="backup",
+                message=(
+                    f"Imported {label} '{Path(original_name).name[:120]}' "
+                    f"into '{branch.name}' (container stopped)"
+                ),
+            )
+        )
+    return label
+
+
 def restore_backup(branch, backup: Backup) -> None:
     db_path = Path(backup.db_path)
     if not db_path.exists():
@@ -139,6 +266,7 @@ def restore_backup(branch, backup: Backup) -> None:
                 tar.extractall(base, filter="data")  # py3.12+
             except TypeError:
                 tar.extractall(base)
+        docker_ctl.make_tree_container_writable(base)
     with session_scope() as session:
         session.add(
             Event(

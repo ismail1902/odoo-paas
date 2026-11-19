@@ -33,6 +33,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Change control-plane domain | topbar **Settings** gear → enter domain → save (nginx + certbot + loopback rebind). |
 | Uninstall platform | `sudo ./uninstall.sh` (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); `--dry-run` previews. |
 | Take a backup now | branch → Backups → *Create backup* (or `manage backup-all`). |
+| Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`. |
 | Download a backup | branch → Backups → Download (db dump only; the filestore tarball sits next to it under `/var/lib/odoo-paas/backups/`). |
 | Restore a backup | branch → Backups → Restore (admin). Container stops; press Start when ready. |
 | Read captured emails | SSH tunnel `ssh -L 8025:127.0.0.1:8025 root@SERVER` then http://127.0.0.1:8025 |
@@ -152,6 +153,24 @@ safe workflow here is:
    previous commit.
 
 Backups are cheap; take one before every production `-u all` deploy.
+
+## Importing an external database
+
+Admins can use **branch → Backups → Import database** to replace a branch
+database from an uploaded file:
+
+- PostgreSQL custom dump (`.dump` / `.backup`, `pg_dump -Fc`)
+- Plain SQL (`.sql`)
+- Gzipped SQL (`.sql.gz`)
+- Odoo backup zip (`dump.sql` + `filestore/`)
+
+The upload limit is 2 GB. The branch container is stopped during import and
+stays stopped afterward; press **Start** or **Deploy** when ready. A zip also
+replaces the Odoo filestore for that branch's database; other formats restore
+the database only. The source dump must use the branch's Odoo and PostgreSQL
+versions. Take a backup before importing if the current data may be needed.
+If the control plane has a custom domain, re-save it once after updating so
+nginx picks up the larger upload limit.
 
 ## Odoo versions
 

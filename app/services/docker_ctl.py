@@ -16,6 +16,7 @@ Topology
 """
 from __future__ import annotations
 
+import gzip
 import os
 import subprocess
 import time
@@ -221,6 +222,24 @@ def _make_container_writable(path: Path) -> None:
         os.chown(path, CONTAINER_UID, CONTAINER_GID)
     except (OSError, AttributeError):
         pass  # non-POSIX dev machines (e.g. macOS)
+
+
+def make_tree_container_writable(path: Path) -> None:
+    """Recursively give a restored tree to the container user."""
+    try:
+        os.chmod(path, 0o775)
+        os.chown(path, CONTAINER_UID, CONTAINER_GID)
+        for root, dirs, files in os.walk(path):
+            for name in dirs:
+                child = Path(root) / name
+                os.chmod(child, 0o775)
+                os.chown(child, CONTAINER_UID, CONTAINER_GID)
+            for name in files:
+                child = Path(root) / name
+                os.chmod(child, 0o664)
+                os.chown(child, CONTAINER_UID, CONTAINER_GID)
+    except (OSError, AttributeError):
+        pass
 
 
 # --- Container definitions -----------------------------------------------------
@@ -755,6 +774,42 @@ def restore_database(
         )
     if result.returncode != 0:
         raise BuildError(f"pg_restore failed: {result.stderr.decode(errors='replace')}")
+
+
+def restore_sql_database(
+    db_name: str,
+    src: Path,
+    *,
+    container: Optional[str] = None,
+    compressed: bool = False,
+) -> None:
+    """Restore a plain SQL dump (optionally gzipped) into a fresh database."""
+    if settings.MOCK_DOCKER:
+        return
+    drop_database(db_name, container=container)
+    ensure_database(db_name, container=container)
+    opener = gzip.open if compressed else open
+    with opener(src, "rb") as fh:
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                "-i",
+                container or settings.PG_CONTAINER,
+                "psql",
+                "-U",
+                settings.PG_USER,
+                "-d",
+                db_name,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-q",
+            ],
+            stdin=fh,
+            capture_output=True,
+        )
+    if result.returncode != 0:
+        raise BuildError(f"psql restore failed: {result.stderr.decode(errors='replace')}")
 
 
 # --- Interactive terminal (web shell) ---------------------------------------------
