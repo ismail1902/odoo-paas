@@ -5,6 +5,7 @@ Usage (from the repository root, venv active as needed):
     python -m app.manage init
     python -m app.manage create-admin --email a@b.c --password secret [--role admin]
     python -m app.manage set-password --email a@b.c --password new
+    python -m app.manage reset-2fa --email a@b.c
     python -m app.manage backup-all [--kind manual]
     python -m app.manage retention
     python -m app.manage doctor
@@ -68,6 +69,20 @@ def cmd_backup_all(args) -> None:
             print(f"branch {branch.id} ({branch.name}): backup #{backup.id}")
         except Exception as exc:  # noqa: BLE001
             print(f"branch {branch.id} ({branch.name}): FAILED - {exc}")
+
+
+def cmd_reset_2fa(args) -> None:
+    init_db()
+    with session_scope() as session:
+        user = session.exec(select(User).where(User.email == args.email.lower().strip())).first()
+        if user is None:
+            print(f"user {args.email} not found")
+            sys.exit(1)
+        user.totp_enabled = False
+        user.totp_secret = ""
+        user.totp_recovery_codes = ""
+        session.add(user)
+    print(f"two-factor authentication reset for {args.email}")
 
 
 def cmd_retention(_args) -> None:
@@ -138,6 +153,10 @@ def main() -> None:
     pw.add_argument("--email", required=True)
     pw.add_argument("--password", required=True)
     pw.set_defaults(func=cmd_set_password)
+
+    twofa = sub.add_parser("reset-2fa", help="disable a user's two-factor authentication")
+    twofa.add_argument("--email", required=True)
+    twofa.set_defaults(func=cmd_reset_2fa)
 
     backup = sub.add_parser("backup-all", help="back up every branch now")
     backup.add_argument("--kind", default="manual", choices=["manual", "auto", "update"])

@@ -35,11 +35,17 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
   `odoo-paas/base:<version>` from the latest Odoo source for the selected
   version, runs `-u all` when the database exists, and redeploys the branch
   in one serialized build.
-- **Control-plane domain and HTTPS.** An admin-only gear button in the topbar
-  opens platform settings. Enter a domain and the platform writes the nginx
-  site, obtains a Let's Encrypt certificate, and rebinds uvicorn to
-  `127.0.0.1` so the raw IP:8000 endpoint is no longer exposed. Removing the
-  domain restores `0.0.0.0` and IP access.
+- **Control-plane domain and HTTPS.** The topbar **Settings** gear opens
+  platform settings. Admins see the control-plane domain card: enter a domain
+  and the platform writes the nginx site, obtains a Let's Encrypt certificate,
+  and rebinds uvicorn to `127.0.0.1` so the raw IP:8000 endpoint is no longer
+  exposed. Removing the domain restores `0.0.0.0` and IP access.
+- **Two-factor authentication.** Every user can enable TOTP 2FA from the
+  topbar **Settings** page with any authenticator app (QR code or manual
+  secret). Sign-in asks for the 6-digit code after the password and also
+  accepts one of ten single-use recovery codes. Recovery codes are stored
+  hashed and shown once; lost authenticators can be reset by an admin with
+  `manage reset-2fa --email`.
 - **Custom domains and HTTPS for branches.** With Proxy mode enabled, each
   branch can have a domain. nginx is configured automatically (including the
   websocket/gevent upstream) and Let's Encrypt certificates are issued and
@@ -150,6 +156,9 @@ nginx templates, re-save the affected control-plane/branch domains once.
    repository URL/private-repo credentials and the Odoo server configuration.
 5. Per-branch *Settings* tab: modules to install on first DB init, run tests
    (development), `-u all` on every deploy.
+6. **Account security** — topbar **Settings** → *Two-factor authentication*:
+   scan the QR code, verify a code, and store the recovery codes somewhere
+   safe. Sign-in then requires the authenticator code after your password.
 
 ## Repository layout
 
@@ -159,10 +168,10 @@ app/
   web.py         server-rendered pages (Jinja2 + HTMX)
   api.py         webhook, JSON API, websockets (logs + shell)
   worker.py      background build worker + retention timer
-  manage.py      CLI: init, create-admin, set-password, backup-all, retention, doctor
+  manage.py      CLI: init, create-admin, set-password, reset-2fa, backup-all, retention, doctor
   config.py      all settings (env/.env; no os.environ elsewhere)
   odoo_config.py Odoo server options exposed in project settings
-  db.py models.py auth.py ports.py errors.py
+  db.py models.py auth.py twofa.py ports.py errors.py
   services/      docker_ctl (all Docker), gitops, builder, backups, monitor
   templates/ static/
 docker/odoo-base/Dockerfile   shared Odoo image (odoo-paas/base:<version>)

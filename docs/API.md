@@ -1,7 +1,9 @@
 # API reference
 
 Base URL: `http://SERVER_IP:8000`. Browser routes are session-cookie
-authenticated; `/webhooks/…` uses HMAC; `/healthz` is open.
+authenticated; `/webhooks/…` uses HMAC; `/healthz` is open. Accounts with
+TOTP 2FA enabled complete a second step at `/login/2fa` before the session
+cookie is issued.
 
 ## GitHub webhook
 
@@ -87,6 +89,7 @@ The shell starts as `bash` with cwd `/mnt/user` inside the branch container;
 .venv/bin/python -m app.manage init
 .venv/bin/python -m app.manage create-admin  --email a@b --password s [--role admin|developer|tester]
 .venv/bin/python -m app.manage set-password  --email a@b --password s
+.venv/bin/python -m app.manage reset-2fa     --email a@b
 .venv/bin/python -m app.manage backup-all    [--kind manual|auto|update]
 .venv/bin/python -m app.manage retention
 .venv/bin/python -m app.manage doctor

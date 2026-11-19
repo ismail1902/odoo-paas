@@ -90,6 +90,22 @@ def _migrate() -> None:
             "WHERE postgres_version IS NULL OR postgres_version = ''",
             (postgres.DEFAULT_VERSION,),
         )
+        user_columns = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(user)").fetchall()
+        }
+        if "totp_secret" not in user_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE user ADD COLUMN totp_secret VARCHAR DEFAULT ''"
+            )
+        if "totp_enabled" not in user_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE user ADD COLUMN totp_enabled BOOLEAN DEFAULT 0"
+            )
+        if "totp_recovery_codes" not in user_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE user ADD COLUMN totp_recovery_codes VARCHAR DEFAULT ''"
+            )
         build_columns = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(build)").fetchall()

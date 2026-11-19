@@ -19,8 +19,10 @@ from app.config import settings
 from app.models import ROLE_RANK, User
 
 COOKIE_NAME = "odoo_paas_session"
+TWOFA_COOKIE = "odoo_paas_2fa"
 _PBKDF2_ITERATIONS = 260_000
 _serializer = URLSafeTimedSerializer(settings.SECRET_KEY, salt="odoo-paas-session")
+_twofa_serializer = URLSafeTimedSerializer(settings.SECRET_KEY, salt="odoo-paas-2fa")
 
 
 # --- Passwords ---------------------------------------------------------------
@@ -57,10 +59,41 @@ def login_user(response: Response, user: User) -> None:
         samesite="lax",
         max_age=settings.SESSION_MAX_AGE,
     )
+    response.delete_cookie(TWOFA_COOKIE)
 
 
 def logout_user(response: Response) -> None:
     response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie(TWOFA_COOKIE)
+
+
+def set_pending_2fa(response: Response, user: User) -> None:
+    token = _twofa_serializer.dumps({"uid": user.id})
+    response.set_cookie(
+        TWOFA_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=300,
+    )
+
+
+def pending_2fa_user(request: Request, session: Session) -> Optional[User]:
+    token = request.cookies.get(TWOFA_COOKIE)
+    if not token:
+        return None
+    try:
+        data = _twofa_serializer.loads(token, max_age=300)
+    except BadSignature:
+        return None
+    user_id = data.get("uid")
+    if not user_id:
+        return None
+    return session.get(User, user_id)
+
+
+def clear_pending_2fa(response: Response) -> None:
+    response.delete_cookie(TWOFA_COOKIE)
 
 
 def _user_from_token(token: Optional[str], session: Session) -> Optional[User]:

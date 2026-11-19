@@ -49,6 +49,9 @@ class User(SQLModel, table=True):
     name: str = ""
     password_hash: str
     role: str = "admin"
+    totp_secret: str = ""
+    totp_enabled: bool = False
+    totp_recovery_codes: str = ""  # JSON list of hashed one-time codes
     created_at: NaiveDatetime = Field(default_factory=_now)
 
 

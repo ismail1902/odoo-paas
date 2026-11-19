@@ -30,7 +30,9 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Change modules installed on first init | branch → Settings → *Modules to install* **before the first build**; afterwards use `-u all` (toggle update_on_deploy) or the shell. |
 | Install a module later | shell → `odoo -d $PGDATABASE --no-http --stop-after-init -i <module>` (from the branch *Shell* tab). |
 | Update all modules after pulling code | branch → Settings → enable *Update modules on deploy* → Deploy. |
-| Change control-plane domain | topbar **Settings** gear → enter domain → save (nginx + certbot + loopback rebind). |
+| Change control-plane domain | topbar **Settings** gear → (admins) enter domain → save (nginx + certbot + loopback rebind). |
+| Enable two-factor authentication | topbar **Settings** → *Two-factor authentication* → set up, scan the QR code, verify a code, save the recovery codes. |
+| Reset a lost authenticator | `manage reset-2fa --email user@example.com`, then sign in and set up 2FA again. |
 | Uninstall platform | `sudo ./uninstall.sh` (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); `--dry-run` previews. |
 | Take a backup now | branch → Backups → *Create backup* (or `manage backup-all`). |
 | Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`. |
@@ -211,6 +213,36 @@ Odoo X is not built on this host" — rebuild it or create the project on a
 different version. Existing databases are **not** migrated between Odoo
 series; export/import via standard Odoo upgrade tooling if ever needed, and
 never point two Odoo series at the same database.
+
+## Two-factor authentication
+
+2FA is per user and optional. Enable it from the topbar **Settings** gear
+(all users see this page; only admins see control-plane domain controls):
+
+1. **Two-factor authentication** → *Set up two-factor authentication*.
+2. Scan the QR code with any TOTP app (Google Authenticator, Microsoft
+   Authenticator, 1Password, Authy, …) or enter the shown secret manually.
+3. Enter the current 6-digit code to enable it.
+4. Save the ten recovery codes shown once. Each code works once in place of
+   an authenticator code.
+
+With 2FA enabled, password login redirects to `/login/2fa`. The platform
+issues only a short-lived signed pending cookie (5 minutes) until a valid
+TOTP or recovery code is entered; the real session cookie is created after
+verification. Codes are accepted with a ±1 time-step window for clock skew.
+
+Disabling 2FA requires the account password. If the authenticator device is
+lost and no recovery code is available, an admin with shell access resets it:
+
+```bash
+cd /opt/odoo-paas
+sudo .venv/bin/python -m app.manage reset-2fa --email user@example.com
+```
+
+The user can then sign in with just the password and re-enrol. TOTP secrets
+are stored in the state database because they are needed to verify codes;
+recovery codes are stored only as SHA-256 hashes. Treat
+`/var/lib/odoo-paas/state.db` as sensitive, like `.env`.
 
 ## Control-plane domain and bind address
 

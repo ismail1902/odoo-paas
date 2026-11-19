@@ -428,6 +428,27 @@ button.primary:hover, .primary:hover { background: var(--accent-2); }
   background: var(--accent); transition: width 0.15s linear;
 }
 .upload-progress-meta { color: var(--muted); font-size: 12px; }
+.totp-setup {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px; align-items: start; margin: 14px 0;
+}
+.totp-qr {
+  width: max-content; padding: 12px; border-radius: 10px; background: #fff;
+}
+.totp-qr svg { display: block; width: 220px; height: 220px; }
+.recovery-code-list {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 8px; list-style: none; padding: 0; margin: 12px 0 0;
+}
+.recovery-code-list code {
+  display: block; padding: 8px 10px; text-align: center;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel-2); font-size: 13px;
+}
+@media (max-width: 700px) {
+  .totp-setup { grid-template-columns: 1fr; }
+  .totp-qr { justify-self: start; }
+}
 .restore-panel { margin-bottom: 16px; }
 .restore-log {
   max-height: 320px; overflow: auto; margin: 8px 0 12px;

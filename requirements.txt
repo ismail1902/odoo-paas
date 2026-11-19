@@ -6,3 +6,5 @@ itsdangerous>=2.2,<3
 sqlmodel>=0.0.21,<1
 docker>=7.1,<8
 psutil>=5.9,<8
+pyotp>=2.9,<3
+segno>=1.6,<2

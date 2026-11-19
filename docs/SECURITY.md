@@ -23,6 +23,12 @@ Treat UI accounts as server administrators and prefer `ufw` to restrict
   random value; rotation logs everyone out).
 - First admin: seeded from `ADMIN_EMAIL`/`ADMIN_PASSWORD` only while the
   user table is empty; afterwards create users with `manage create-admin`.
+- Optional TOTP 2FA (`app/twofa.py`): a correct password issues only a
+  signed 5-minute pending cookie; the real session cookie is set after a
+  valid 6-digit code or recovery code. Verification accepts a ±1 time-step
+  window. Ten recovery codes are generated at enrolment, shown once, stored
+  as SHA-256 hashes, and deleted when used. Disabling 2FA requires the
+  account password. `manage reset-2fa --email` is the lockout path.
 
 ## Roles
 
@@ -53,6 +59,8 @@ out of the platform or deploy via admins only.
 | Repo token in project URL | state DB, shown per project | edit project settings |
 | SMTP password (Odoo config) | state DB, `Project.odoo_config` (plaintext) | edit project settings |
 | UI passwords | state DB (hashes only) | `manage set-password` |
+| TOTP secrets | state DB (plaintext, needed to verify codes) | disable/re-enrol 2FA or `manage reset-2fa`; rotating `SECRET_KEY` does not change them |
+| 2FA recovery codes | state DB (SHA-256 hashes only) | regenerate by disabling and re-enrolling 2FA |
 
 Repository tokens are stored in project URLs, but git operations pass them
 through a temporary `GIT_ASKPASS` helper instead of the command line.
@@ -82,6 +90,9 @@ missing) and from git (`.gitignore`).
 - The web shell equals SSH access to the branch container (not the host).
 - Mailpit stores copies of all outgoing mail unencrypted under the docker
   volume.
+- TOTP secrets are stored unencrypted in the state database (they must be
+  available to verify codes). Anyone who can read `state.db` can generate
+  valid codes for enrolled accounts; protect the file like `.env`.
 
 ## Hardening checklist
 
@@ -90,6 +101,7 @@ missing) and from git (`.gitignore`).
       keep IP:8000, restrict it with `ufw` to your office/VPN IPs. Leave
       9000–9990 open only if branch Odoos are meant to be public.
 - [ ] Strong admin password; no shared accounts; create separate users.
+- [ ] Enable 2FA for admin accounts and store the recovery codes offline.
 - [ ] `.env` mode 600, owned by root (install.sh does this).
 - [ ] Keep the host patched; `sudo ./install.sh --rebuild-base` for Odoo
       security releases, then redeploy branches.

@@ -67,6 +67,12 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    `odoo-paas-branch-N.conf`.
 10. **No comments unless non-obvious.** Existing style: module docstrings +
    minimal inline comments. Match it.
+11. **2FA is per user and all TOTP logic goes through `app/twofa.py`.**
+   Password login may only issue the short-lived pending cookie
+   (`TWOFA_COOKIE`, 5 minutes) when `User.totp_enabled`; the real session
+   cookie comes after TOTP or recovery-code verification. Recovery codes are
+   SHA-256 hashed and single-use. Never log secrets/codes. Lost-device reset
+   is `manage reset-2fa --email`; disabling from the UI requires the password.
 
 ## Layout
 
@@ -78,10 +84,11 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/models.py` | SQLModel tables + status constants (`BUILD_*`, `STAGES`, `ROLES`) |
 | `app/odoo_config.py` | curated Odoo server options, JSON/config validation, CLI args |
 | `app/postgres.py` | supported PostgreSQL/pgvector versions and Odoo compatibility |
-| `app/auth.py` | PBKDF2 hashing, signed-cookie sessions, `has_role`, `can_open_shell` |
+| `app/auth.py` | PBKDF2 hashing, signed-cookie sessions, pending-2FA cookie, `has_role`, `can_open_shell` |
+| `app/twofa.py` | TOTP secret/URI/QR, code verification, recovery-code hashing |
 | `app/ports.py` | port pool allocation (persisted on Branch, OS bind test) |
 | `app/worker.py` | restore/build claim loop, stale-job recovery, hourly retention |
-| `app/manage.py` | argparse CLI (init, create-admin, set-password, backup-all, retention, doctor) |
+| `app/manage.py` | argparse CLI (init, create-admin, set-password, reset-2fa, backup-all, retention, doctor) |
 | `app/services/builder.py` | the 5-step pipeline; writes `logs/build-<id>.log` |
 | `app/services/gitops.py` | git sync/checkout, commit metadata, webhook HMAC verify |
 | `app/services/backups.py` | dump/import/restore jobs, retention (3d + 7/4/3 buckets) |

@@ -4,11 +4,98 @@
 <div class="page-head">
   <div>
     <h1>Platform settings</h1>
-    <div class="muted small">Control plane domain, HTTPS and bind address. Branch Odoo domains are configured per branch.</div>
+    <div class="muted small">
+      {% if is_admin %}
+      Control plane domain, HTTPS and bind address. Branch Odoo domains are configured per branch.
+      {% else %}
+      Account security and two-factor authentication.
+      {% endif %}
+    </div>
   </div>
   <a class="button" href="/">← Dashboard</a>
 </div>
 
+<div class="card">
+  <div class="row space-between">
+    <div>
+      <h3>Two-factor authentication</h3>
+      <p class="muted small">
+        Protect your account with a 6-digit code from an authenticator app.
+      </p>
+    </div>
+    <span class="pill {{ 'succeeded' if user.totp_enabled else 'new' }}">
+      {{ 'enabled' if user.totp_enabled else 'disabled' }}
+    </span>
+  </div>
+
+  {% if user.totp_enabled %}
+  <p class="small">
+    Two-factor authentication is enabled for <strong>{{ user.email }}</strong>.
+    Use your authenticator app at sign-in, or one of your recovery codes.
+  </p>
+  <form method="post" action="/settings/2fa/disable" class="stack" style="max-width: 420px">
+    <label>Confirm with your current password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button class="danger-btn" type="submit">Disable two-factor authentication</button>
+  </form>
+
+  {% elif totp_setup %}
+  <div class="totp-setup">
+    <div class="totp-qr">{{ totp_qr|safe }}</div>
+    <div>
+      <p class="small">
+        Scan this QR code with Google Authenticator, Microsoft Authenticator,
+        1Password, Authy or another TOTP app.
+      </p>
+      <p class="small muted">Or enter this secret manually:</p>
+      <code class="block">{{ user.totp_secret }}</code>
+      <p class="muted small">
+        The issuer is <strong>Odoo PaaS</strong> and the account is
+        <strong>{{ user.email }}</strong>.
+      </p>
+    </div>
+  </div>
+  <form method="post" action="/settings/2fa/verify" class="stack" style="max-width: 420px">
+    <label>6-digit code from the app
+      <input name="code" inputmode="numeric" autocomplete="one-time-code"
+             pattern="[0-9 ]{6,9}" placeholder="123456" required>
+    </label>
+    <div class="row gap">
+      <button class="primary" type="submit">Enable two-factor authentication</button>
+    </div>
+  </form>
+  <form method="post" action="/settings/2fa/cancel" style="margin-top: 8px">
+    <button class="button" type="submit">Cancel setup</button>
+  </form>
+
+  {% else %}
+  <p class="small">
+    Two-factor authentication adds a one-time code after your password. You
+    will need an authenticator app on your phone or computer.
+  </p>
+  <form method="post" action="/settings/2fa/setup">
+    <button class="primary" type="submit">Set up two-factor authentication</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if recovery_codes %}
+<div class="card recovery-codes-card">
+  <h3>Save your recovery codes</h3>
+  <p class="small danger-text">
+    These codes are shown once. Each can be used instead of a 6-digit code.
+    Store them somewhere safe.
+  </p>
+  <ul class="recovery-code-list">
+    {% for code in recovery_codes %}
+    <li><code>{{ code }}</code></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if is_admin %}
 <div class="grid-2">
   <div class="card">
     <h3>Control plane domain</h3>
@@ -129,5 +216,6 @@
     <button class="danger-btn" type="submit">Disable domain and restore IP access</button>
   </form>
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}

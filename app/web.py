@@ -24,13 +24,16 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from app import odoo_config, postgres
+from app import odoo_config, postgres, twofa
 from app.auth import (
     can_open_shell,
+    clear_pending_2fa,
     current_user,
     has_role,
     login_user,
     logout_user,
+    pending_2fa_user,
+    set_pending_2fa,
     verify_password,
 )
 from app.config import settings
@@ -149,9 +152,59 @@ def login_submit(
     user = session.exec(select(User).where(User.email == email.lower().strip())).first()
     if user is None or not verify_password(password, user.password_hash):
         return _back("/login", "Invalid email or password")
+    if user.totp_enabled:
+        if not user.totp_secret:
+            return _back("/login", "Two-factor authentication is misconfigured for this user")
+        response = RedirectResponse("/login/2fa", status_code=303)
+        set_pending_2fa(response, user)
+        return response
     response = RedirectResponse("/", status_code=303)
     login_user(response, user)
     return response
+
+
+@router.get("/login/2fa", response_class=HTMLResponse)
+def login_2fa_page(request: Request, session: Session = Depends(get_session)):
+    user = pending_2fa_user(request, session)
+    if user is None:
+        response = _back("/login", "Sign in again to continue")
+        clear_pending_2fa(response)
+        return response
+    return templates.TemplateResponse(
+        request, "login_2fa.html", _ctx(request, None, email=user.email)
+    )
+
+
+@router.post("/login/2fa")
+def login_2fa_submit(
+    request: Request,
+    code: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    user = pending_2fa_user(request, session)
+    if user is None:
+        response = _back("/login", "Sign in again to continue")
+        clear_pending_2fa(response)
+        return response
+    if not user.totp_enabled:
+        response = RedirectResponse("/", status_code=303)
+        login_user(response, user)
+        return response
+    if twofa.verify_code(user.totp_secret, code):
+        response = RedirectResponse("/", status_code=303)
+        login_user(response, user)
+        return response
+    matched, remaining = twofa.consume_recovery_code(
+        user.totp_recovery_codes, code
+    )
+    if matched:
+        user.totp_recovery_codes = remaining
+        session.add(user)
+        session.commit()
+        response = RedirectResponse("/", status_code=303)
+        login_user(response, user)
+        return response
+    return _back("/login/2fa", "Invalid two-factor or recovery code")
 
 
 @router.get("/logout")
@@ -229,6 +282,37 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     )
 
 
+def _platform_settings_response(
+    request: Request,
+    user: User,
+    session: Session,
+    *,
+    recovery_codes: Optional[list] = None,
+    message: str = "",
+):
+    is_admin = has_role(user, "admin")
+    setup = bool(user.totp_secret and not user.totp_enabled)
+    totp_uri = (
+        twofa.provisioning_uri(user.totp_secret, user.email) if setup else ""
+    )
+    return templates.TemplateResponse(
+        request,
+        "platform_settings.html",
+        _ctx(
+            request,
+            user,
+            is_admin=is_admin,
+            status=control_plane.status(session, request) if is_admin else None,
+            port=settings.PORT,
+            totp_setup=setup,
+            totp_uri=totp_uri,
+            totp_qr=twofa.qr_svg(totp_uri) if setup else "",
+            recovery_codes=recovery_codes or [],
+            msg=message or _msg(request),
+        ),
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def platform_settings_page(
     request: Request, session: Session = Depends(get_session)
@@ -236,18 +320,7 @@ def platform_settings_page(
     user, redirect = _page_user(request, session)
     if redirect:
         return redirect
-    if not has_role(user, "admin"):
-        return _back("/", "Only admins can change platform settings")
-    return templates.TemplateResponse(
-        request,
-        "platform_settings.html",
-        _ctx(
-            request,
-            user,
-            status=control_plane.status(session, request),
-            port=settings.PORT,
-        ),
-    )
+    return _platform_settings_response(request, user, session)
 
 
 @router.post("/settings")
@@ -292,6 +365,89 @@ def platform_settings_save(
             ),
         )
     return _back("/settings", result["message"])
+
+
+@router.post("/settings/2fa/setup")
+def settings_2fa_setup(
+    request: Request, session: Session = Depends(get_session)
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    if user.totp_enabled:
+        return _back("/settings", "Two-factor authentication is already enabled")
+    user.totp_secret = twofa.new_secret()
+    user.totp_enabled = False
+    user.totp_recovery_codes = ""
+    session.add(user)
+    session.commit()
+    return _back("/settings", "Scan the QR code, then verify the 6-digit code")
+
+
+@router.post("/settings/2fa/verify")
+def settings_2fa_verify(
+    request: Request,
+    code: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    if user.totp_enabled:
+        return _back("/settings", "Two-factor authentication is already enabled")
+    if not user.totp_secret:
+        return _back("/settings", "Start the two-factor setup first")
+    if not twofa.verify_code(user.totp_secret, code):
+        return _back("/settings", "Invalid authenticator code")
+    codes = twofa.generate_recovery_codes()
+    user.totp_enabled = True
+    user.totp_recovery_codes = twofa.hash_recovery_codes(codes)
+    session.add(user)
+    session.commit()
+    return _platform_settings_response(
+        request,
+        user,
+        session,
+        recovery_codes=codes,
+        message=(
+            "Two-factor authentication enabled. Save these recovery codes now; "
+            "they will not be shown again."
+        ),
+    )
+
+
+@router.post("/settings/2fa/disable")
+def settings_2fa_disable(
+    request: Request,
+    password: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    if not verify_password(password, user.password_hash):
+        return _back("/settings", "Password is incorrect")
+    user.totp_enabled = False
+    user.totp_secret = ""
+    user.totp_recovery_codes = ""
+    session.add(user)
+    session.commit()
+    return _back("/settings", "Two-factor authentication disabled")
+
+
+@router.post("/settings/2fa/cancel")
+def settings_2fa_cancel(
+    request: Request, session: Session = Depends(get_session)
+):
+    user, redirect = _page_user(request, session)
+    if redirect:
+        return redirect
+    if not user.totp_enabled:
+        user.totp_secret = ""
+        user.totp_recovery_codes = ""
+        session.add(user)
+        session.commit()
+    return _back("/settings", "Two-factor setup cancelled")
 
 
 @router.post("/projects")
