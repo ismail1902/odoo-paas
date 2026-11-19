@@ -1,0 +1,13 @@
+Odoo PaaS
+Copyright 2026 Ismail Moosa
+
+This product includes software developed by Ismail Moosa
+(https://github.com/ismail1902/odoo-paas).
+
+Odoo, the Odoo logo and Odoo Enterprise are trademarks or products of Odoo S.A.
+This project is an independent control plane and is not affiliated with or
+endorsed by Odoo S.A.
+
+Odoo Community source code is downloaded at image build time and remains under
+its own license (LGPL-3.0). Odoo Enterprise addons are proprietary, require a
+valid Odoo Enterprise subscription, and are not distributed by this repository.

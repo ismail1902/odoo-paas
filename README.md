@@ -167,6 +167,9 @@ install.sh                    idempotent server installer
 uninstall.sh                  safe uninstaller (keeps data unless --purge)
 docs/                         ARCHITECTURE, DEPLOYMENT, RUNBOOK, API, SECURITY
 AGENTS.md                     guide for AI agents working on this repo
+LICENSE                       Apache License 2.0
+NOTICE                        copyright and Odoo trademark notice
+CONTRIBUTING.md               contribution and DCO guidelines
 ```
 
 ## Documentation
@@ -179,10 +182,28 @@ AGENTS.md                     guide for AI agents working on this repo
 | [docs/API.md](docs/API.md) | HTTP/WebSocket endpoints and payloads |
 | [docs/SECURITY.md](docs/SECURITY.md) | roles, secrets, exposure, hardening |
 | [AGENTS.md](AGENTS.md) | conventions and invariants for AI agents |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | contribution workflow, DCO and licensing |
+
+## License
+
+The Odoo PaaS platform code in this repository is licensed under the
+[Apache License, Version 2.0](LICENSE). Redistributions must preserve the
+[NOTICE](NOTICE) file and the copyright attribution. Forks are welcome, but
+they must not imply that they are official Odoo products.
+
+This license covers the platform code only. Odoo Community is licensed
+separately under LGPL-3.0 and is downloaded when base images are built; Odoo
+Enterprise addons are proprietary and require a valid Odoo Enterprise
+subscription. The Odoo name and logo are trademarks of Odoo S.A. This project
+is independent and is not affiliated with or endorsed by Odoo S.A.
+
+Contributions are accepted under Apache-2.0 with a Developer Certificate of
+Origin sign-off; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Non-goals (vs. Odoo.sh)
 
 Single server, single worker, no per-branch custom Odoo versions side by side,
 no staging database restoration workflow (staging starts empty — create a
 backup on production and restore it via the Backups tab if you want the data),
-no TLS/domains, no autoscaling. See ARCHITECTURE.md for the reasoning.
+no TLS on raw branch ports (custom branch domains are supported), no
+autoscaling. See ARCHITECTURE.md for the reasoning.

@@ -93,6 +93,8 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `docker/odoo-base/Dockerfile` | shared Odoo image; system-wide Odoo requirements |
 | `install.sh` | idempotent server installer (keep it idempotent!) |
 | `uninstall.sh` | safe uninstaller; keeps data unless `--purge` |
+| `LICENSE`, `NOTICE` | Apache-2.0 terms and required copyright attribution |
+| `CONTRIBUTING.md` | contributors' DCO and licensing rules |
 | `systemd/odoo-paas.service` | production unit, runs as root, `${HOST}`/`${PORT}` from `.env` |
 
 ## Dev workflow (macOS/Linux)
@@ -189,6 +191,9 @@ There is no test suite; verify by:
 - `uninstall.sh` is non-destructive by default: it keeps PostgreSQL volumes,
   `/var/lib/odoo-paas` and certificates. Only `--purge` may delete data.
   `--dry-run` must remain side-effect free.
+- The platform code is Apache-2.0. Keep `LICENSE`/`NOTICE` intact and never
+  commit Odoo Enterprise source or other proprietary code. Contributors sign
+  off commits with DCO (`git commit -s`); there is no CLA.
 - `install.sh` keeps an existing `.env` (secrets must not regenerate on
   update): its internal rsync excludes `.env .venv var .git __pycache__` —
   never remove `.env` from that exclude list.
