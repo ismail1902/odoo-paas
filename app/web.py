@@ -798,8 +798,6 @@ def branch_page(
             workers=workers,
             domain_url=domain_url,
             can_shell=can_open_shell(user, branch.stage),
-            can_neutralize=docker_ctl.supports_neutralize(branch),
-            neutralize_native=docker_ctl.has_native_neutralize(branch),
             container_state=docker_ctl.container_state(branch.container_name),
         ),
     )
@@ -1198,7 +1196,6 @@ def restore_backup_route(
     backup_id: int,
     request: Request,
     confirm: str = Form(""),
-    neutralize: str = Form(""),
     session: Session = Depends(get_session),
 ):
     user, redirect = _page_user(request, session)
@@ -1212,12 +1209,6 @@ def restore_backup_route(
     branch = session.get(Branch, backup.branch_id)
     if confirm != "restore":
         return _back(f"/branches/{branch.id}?tab=backups", "Restore cancelled")
-    neutralize_db = _checkbox(neutralize)
-    if neutralize_db and not docker_ctl.supports_neutralize(branch):
-        return _back(
-            f"/branches/{branch.id}?tab=backups",
-            "Database neutralization requires Odoo 15 or newer",
-        )
     if backups_service.active_restore(session, branch.id):
         return _back(
             f"/branches/{branch.id}?tab=backups",
@@ -1238,7 +1229,6 @@ def restore_backup_route(
         backup_id=backup.id,
         kind="backup",
         source_name=Path(backup.db_path).name,
-        neutralize=neutralize_db,
         status=RESTORE_QUEUED,
         step="queued",
     )
@@ -1246,10 +1236,9 @@ def restore_backup_route(
     branch.status = "restoring"
     session.add(branch)
     session.commit()
-    detail = " with neutralization" if neutralize_db else ""
     return _back(
         f"/branches/{branch.id}?tab=backups",
-        f"Restore #{job.id} queued{detail} - watch progress below",
+        f"Restore #{job.id} queued - watch progress below",
     )
 
 
@@ -1259,7 +1248,6 @@ async def import_backup_route(
     request: Request,
     file: UploadFile = File(...),
     confirm: str = Form(""),
-    neutralize: str = Form(""),
     session: Session = Depends(get_session),
 ):
     user, redirect = _page_user(request, session)
@@ -1275,13 +1263,6 @@ async def import_backup_route(
         )
     if confirm != "import":
         return _back(f"/branches/{branch_id}?tab=backups", "Import cancelled")
-    neutralize_db = _checkbox(neutralize)
-    if neutralize_db and not docker_ctl.supports_neutralize(branch):
-        await file.close()
-        return _back(
-            f"/branches/{branch_id}?tab=backups",
-            "Database neutralization requires Odoo 15 or newer",
-        )
     if backups_service.active_restore(session, branch_id):
         await file.close()
         return _back(
@@ -1319,7 +1300,6 @@ async def import_backup_route(
             kind="import",
             source_path=str(dest),
             source_name=Path(file.filename or "backup").name[:120],
-            neutralize=neutralize_db,
             status=RESTORE_QUEUED,
             step="queued",
         )
@@ -1328,10 +1308,9 @@ async def import_backup_route(
         session.add(branch)
         session.commit()
         queued = True
-        detail = " with neutralization" if neutralize_db else ""
         return _back(
             f"/branches/{branch_id}?tab=backups",
-            f"Import #{job.id} queued{detail} - watch progress below",
+            f"Import #{job.id} queued - watch progress below",
         )
     except Exception as exc:  # noqa: BLE001
         detail = str(exc).replace("\n", " ")[:300]

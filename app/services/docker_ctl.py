@@ -120,18 +120,6 @@ def image_for(branch) -> str:
     return image_name(getattr(branch, "odoo_version", "") or settings.ODOO_VERSION)
 
 
-def supports_neutralize(branch) -> bool:
-    """All supported series can be neutralized (15 uses a platform fallback)."""
-    version = getattr(branch, "odoo_version", "") or settings.ODOO_VERSION
-    return _version_key(version)[0] >= 15
-
-
-def has_native_neutralize(branch) -> bool:
-    """Odoo's own neutralize command exists from 16.0 onwards."""
-    version = getattr(branch, "odoo_version", "") or settings.ODOO_VERSION
-    return _version_key(version)[0] >= 16
-
-
 def image_exists(version: str) -> bool:
     if settings.MOCK_DOCKER:
         return True
@@ -291,16 +279,6 @@ def _has_user_addons(branch) -> bool:
         return False
 
 
-def _has_enterprise_addons(branch) -> bool:
-    try:
-        return any(
-            child.is_dir() and child.name != ".git"
-            for child in enterprise_dir(branch).iterdir()
-        )
-    except OSError:
-        return False
-
-
 def _base_odoo_argv(branch, enterprise: bool = False) -> list:
     addons = "/opt/odoo/addons"
     if _has_user_addons(branch):
@@ -346,25 +324,6 @@ def server_command(branch, config=None, enterprise: bool = False) -> list:
         "--max-cron-threads",
         str(max_cron),
     ] + odoo_config.cli_args(conf)
-
-
-def neutralize_command(branch) -> list:
-    addons = "/opt/odoo/addons"
-    if _has_user_addons(branch):
-        addons += ",/mnt/user"
-    if _has_enterprise_addons(branch):
-        addons += ",/mnt/enterprise"
-    return [
-        "/mnt/venv/bin/python",
-        "/opt/odoo/odoo-bin",
-        "neutralize",
-        "-d",
-        branch.db_name,
-        "--addons-path",
-        addons,
-        "--data-dir",
-        "/mnt/filestore",
-    ]
 
 
 def task_command(
@@ -815,60 +774,6 @@ def restore_database(
         )
     if result.returncode != 0:
         raise BuildError(f"pg_restore failed: {result.stderr.decode(errors='replace')}")
-
-
-def neutralize_database(branch, log: Callable[[str], None]) -> None:
-    if not supports_neutralize(branch):
-        raise BuildError("database neutralization requires Odoo 15 or newer")
-    if not has_native_neutralize(branch):
-        log("Odoo 15: applying platform neutralization (mail servers and crons)")
-        if settings.MOCK_DOCKER:
-            log("[mock] Odoo 15 neutralization applied")
-            return
-        sql = """
-BEGIN;
-UPDATE ir_mail_server
-   SET active = false, smtp_user = NULL, smtp_pass = NULL;
-INSERT INTO ir_mail_server
-       (name, smtp_port, smtp_host, smtp_encryption, active, smtp_authentication)
-VALUES ('neutralization - disable emails', 1025, 'invalid', 'none', true, 'login');
-UPDATE ir_cron
-   SET active = false
- WHERE id NOT IN (
-       SELECT res_id
-         FROM ir_model_data
-        WHERE model = 'ir.cron'
-          AND name = 'autovacuum_job'
-          AND module = 'base'
- );
-INSERT INTO ir_config_parameter (key, value)
-VALUES ('database.is_neutralized', 'True')
-    ON CONFLICT (key) DO UPDATE SET value = 'True';
-COMMIT;
-"""
-        result = _docker_exec_pg(
-            [
-                "psql",
-                "-U",
-                settings.PG_USER,
-                "-d",
-                branch.db_name,
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-q",
-            ],
-            input_bytes=sql.encode(),
-            container=postgres_container(branch),
-        )
-        if result.returncode != 0:
-            detail = result.stderr.decode(errors="replace").replace("\n", " ")[:500]
-            raise BuildError(f"database neutralization failed: {detail}")
-        return
-    command = neutralize_command(branch)
-    log(f"neutralizing database: {' '.join(command)}")
-    code = run_oneoff(branch, command, log, timeout=1800)
-    if code != 0:
-        raise BuildError(f"database neutralization failed (exit code {code})")
 
 
 def restore_sql_database(

@@ -69,10 +69,8 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
    minimal inline comments. Match it.
 11. **Backups may be database-only.** `Backup.filestore_path == ""` means no
    filestore archive; restoring it must leave the existing filestore untouched.
-   `RestoreJob.neutralize` runs database neutralization after the database
-   (and filestore) restore via `docker_ctl.neutralize_database`. Odoo 16+ uses
-   the native command; Odoo 15 uses the platform fallback there (core mail
-   servers + crons). Keep the mock path working.
+   Manual backups expose an **Include filestore** choice; retention and delete
+   must skip empty paths.
 12. **2FA is per user and all TOTP logic goes through `app/twofa.py`.**
    Password login may only issue the short-lived pending cookie
    (`TWOFA_COOKIE`, 5 minutes) when `User.totp_enabled`; the real session
@@ -97,7 +95,7 @@ guide. `docs/RUNBOOK.md` has operations. `docs/DEPLOYMENT.md` has install.
 | `app/manage.py` | argparse CLI (init, create-admin, set-password, reset-2fa, backup-all, retention, doctor) |
 | `app/services/builder.py` | the 5-step pipeline; writes `logs/build-<id>.log` |
 | `app/services/gitops.py` | git sync/checkout, commit metadata, webhook HMAC verify |
-| `app/services/backups.py` | dump/import/restore jobs, optional filestore + neutralization, retention (3d + 7/4/3 buckets) |
+| `app/services/backups.py` | dump/import/restore jobs, optional filestore, retention (3d + 7/4/3 buckets) |
 | `app/services/monitor.py` | psutil host stats + container stats |
 | `app/services/nginx.py` | per-branch and control-plane nginx, Let's Encrypt, reload/rollback |
 | `app/services/control_plane.py` | control-plane domain setting, nginx/HTTPS apply, `HOST` rebind, restart scheduling |

@@ -106,14 +106,6 @@ def _migrate() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE user ADD COLUMN totp_recovery_codes VARCHAR DEFAULT ''"
             )
-        restore_columns = {
-            row[1]
-            for row in conn.exec_driver_sql("PRAGMA table_info(restorejob)").fetchall()
-        }
-        if "neutralize" not in restore_columns:
-            conn.exec_driver_sql(
-                "ALTER TABLE restorejob ADD COLUMN neutralize BOOLEAN DEFAULT 0"
-            )
         build_columns = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(build)").fetchall()

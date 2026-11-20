@@ -151,15 +151,9 @@
         <td class="row gap">
           <a class="small-btn" href="/backups/{{ backup.id }}/download">Download</a>
           {% if user.role == 'admin' %}
-          <form method="post" action="/backups/{{ backup.id }}/restore" class="row gap restore-actions"
+          <form method="post" action="/backups/{{ backup.id }}/restore"
                 onsubmit="return confirm('Restore backup #{{ backup.id }} into {{ branch.name }}? {% if backup.filestore_path %}The current database and filestore will be replaced.{% else %}The current database will be replaced; this backup has no filestore, so the current filestore is kept.{% endif %}')">
             <input type="hidden" name="confirm" value="restore">
-            {% if can_neutralize %}
-            <label class="row gap small" title="Disable outgoing email, crons and integrations after restoring">
-              <input type="checkbox" name="neutralize" value="1">
-              Neutralize
-            </label>
-            {% endif %}
             <button class="small-btn" {% if restore_active %}disabled title="A restore is already running"{% endif %}>Restore</button>
           </form>
           {% endif %}
@@ -174,13 +168,6 @@
     {% endfor %}
     </tbody>
   </table>
-  {% if can_neutralize and not neutralize_native %}
-  <p class="muted small">
-    On Odoo 15, <strong>Neutralize</strong> applies the platform fallback:
-    core outgoing mail servers and crons are disabled. Odoo 16+ also applies
-    module-specific neutralization rules.
-  </p>
-  {% endif %}
 </div>
 
 {% if user.role == 'admin' %}
@@ -208,22 +195,6 @@
         Odoo backup zip. Maximum 2 GB. A zip restores its filestore too;
         other formats restore the database only.
       </p>
-      {% if can_neutralize %}
-      <label class="row gap">
-        <input type="checkbox" name="neutralize" value="1">
-        Neutralize the restored database
-      </label>
-      <p class="muted small">
-        Disables outgoing email, crons and integrations (including webhooks
-        where the installed modules support it) so a production copy can be
-        used safely in staging or development. Runs after the database and
-        filestore are restored.
-        {% if not neutralize_native %}
-        Odoo 15 uses the platform fallback: core mail servers and crons are
-        disabled; module-specific rules need Odoo 16+.
-        {% endif %}
-      </p>
-      {% endif %}
       <p class="muted small danger-text">
         This replaces the current database. Take a backup first if you may need it.
         The dump must match this branch's Odoo and PostgreSQL versions.
