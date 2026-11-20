@@ -1,6 +1,65 @@
-/* Database import dialog: upload progress and restore hand-off. */
+/* Backup dialogs: create options and import upload progress. */
 (function () {
   "use strict";
+
+  function showDialog(dialog) {
+    if (typeof dialog.showModal === "function") {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      dialog.setAttribute("open", "");
+    }
+  }
+
+  function hideDialog(dialog) {
+    if (typeof dialog.close === "function") dialog.close();
+    else dialog.removeAttribute("open");
+  }
+
+  function bindDialog(dialog, openerSelector, closerSelector, onOpen) {
+    if (!dialog) return;
+    var openers = document.querySelectorAll(openerSelector);
+    var closers = dialog.querySelectorAll(closerSelector);
+
+    function open(event) {
+      if (event) event.preventDefault();
+      if (onOpen) onOpen();
+      showDialog(dialog);
+    }
+
+    function close() {
+      hideDialog(dialog);
+    }
+
+    Array.prototype.forEach.call(openers, function (button) {
+      button.addEventListener("click", open);
+    });
+    Array.prototype.forEach.call(closers, function (button) {
+      button.addEventListener("click", close);
+    });
+    dialog.addEventListener("click", function (event) {
+      if (event.target === dialog) close();
+    });
+  }
+
+  var createDialog = document.getElementById("create-backup-dialog");
+  var createForm = createDialog ? createDialog.querySelector("form") : null;
+  bindDialog(
+    createDialog,
+    "[data-open-create-backup]",
+    "[data-close-create-backup]",
+    function () {
+      if (createForm) createForm.reset();
+    }
+  );
+  if (createForm) {
+    createForm.addEventListener("submit", function () {
+      var submit = createForm.querySelector("[data-create-submit]");
+      if (submit) {
+        submit.disabled = true;
+        submit.textContent = "Creating backup…";
+      }
+    });
+  }
 
   var dialog = document.getElementById("import-backup-dialog");
   if (!dialog) return;
@@ -52,16 +111,11 @@
   function openDialog() {
     if (form) form.reset();
     resetUpload();
-    if (typeof dialog.showModal === "function") {
-      if (!dialog.open) dialog.showModal();
-    } else {
-      dialog.setAttribute("open", "");
-    }
+    showDialog(dialog);
   }
 
   function closeDialog() {
-    if (typeof dialog.close === "function") dialog.close();
-    else dialog.removeAttribute("open");
+    hideDialog(dialog);
   }
 
   function abortUpload() {

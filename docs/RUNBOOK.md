@@ -34,7 +34,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Enable two-factor authentication | topbar **Settings** → *Two-factor authentication* → set up, scan the QR code, verify a code, save the recovery codes. |
 | Reset a lost authenticator | `manage reset-2fa --email user@example.com`, then sign in and set up 2FA again. |
 | Uninstall platform | `sudo ./uninstall.sh` (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); `--dry-run` previews. |
-| Take a backup now | branch → Backups → tick/untick *Include filestore* → *Create backup* (or `manage backup-all [--without-filestore]`). |
+| Take a backup now | branch → Backups → *Create backup* → choose whether to include the filestore → *Create backup* (or `manage backup-all [--without-filestore]`). |
 | Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`; optionally neutralize the imported database. |
 | Download a backup | branch → Backups → Download (db dump only; the filestore tarball sits next to it under `/var/lib/odoo-paas/backups/`). |
 | Restore a backup | branch → Backups → Restore (admin). Container stops; press Start when ready. |
@@ -158,9 +158,10 @@ Backups are cheap; take one before every production `-u all` deploy.
 
 ## Backup contents
 
-**Create backup** includes both the database dump and the filestore tarball by
-default. Untick **Include filestore** to create a smaller, faster database-only
-backup; the table's *Contents* column shows `DB + filestore` or `DB only`.
+**Create backup** opens a dialog that includes both the database dump and the
+filestore tarball by default. Untick **Include the filestore** to create a
+smaller, faster database-only backup; the table's *Contents* column shows
+`DB + filestore` or `DB only`.
 
 Restoring a database-only backup replaces the database but leaves the branch's
 current filestore unchanged (the restore log records this). Use a full backup
