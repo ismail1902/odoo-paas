@@ -14,6 +14,24 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
                                                    http://SERVER:9000+ ─► Odoo
 ```
 
+## Demo
+
+[![Odoo PaaS dashboard](demo_assets/screenshots/01-dashboard.png)](demo_assets/odoo-paas-demo.mp4)
+
+▶ **[Watch the 37-second narrated walkthrough](demo_assets/odoo-paas-demo.mp4)**
+
+Fictional demo data — no customer information.
+
+### Screenshots
+
+| Project board | Branch history | Build log |
+|:---:|:---:|:---:|
+| [![Project board](demo_assets/screenshots/02-project-board.png)](demo_assets/screenshots/02-project-board.png) | [![Branch history](demo_assets/screenshots/03-branch-history.png)](demo_assets/screenshots/03-branch-history.png) | [![Build log](demo_assets/screenshots/04-build-log.png)](demo_assets/screenshots/04-build-log.png) |
+| **Backups** | **Create backup** | **Import database** |
+| [![Backups](demo_assets/screenshots/05-backups.png)](demo_assets/screenshots/05-backups.png) | [![Create backup](demo_assets/screenshots/06-create-backup-dialog.png)](demo_assets/screenshots/06-create-backup-dialog.png) | [![Import database](demo_assets/screenshots/07-import-database-dialog.png)](demo_assets/screenshots/07-import-database-dialog.png) |
+| **Monitoring** | **Security settings** | |
+| [![Monitoring](demo_assets/screenshots/08-monitor.png)](demo_assets/screenshots/08-monitor.png) | [![Security settings](demo_assets/screenshots/09-security-settings.png)](demo_assets/screenshots/09-security-settings.png) | |
+
 ## Features
 
 - **Projects → branches → builds.** A project wraps a Git repository; every
