@@ -73,9 +73,12 @@ Browser ──► control plane (FastAPI + HTMX) ──► Docker
 - **Backups and imports** — create a `pg_dump` with or without the filestore
   tarball, then download/restore. Admins can also upload a PostgreSQL `.dump`,
   `.sql`, `.sql.gz` or an Odoo `.zip` backup to replace a branch database (zip
-  also restores the filestore). Restores run in the background worker with a
-  live log in the Backups tab. Retention: keep everything for 3 days, then 7
-  daily, 4 weekly, 3 monthly snapshots.
+  also restores the filestore). Database imports can optionally neutralize the
+  restored database so production copies do not send email or run crons and
+  integrations (Odoo 16+ uses Odoo's native neutralizer; Odoo 15 uses a core
+  platform fallback). Restores run in the background worker with a live log in
+  the Backups tab. Retention: keep everything for 3 days, then 7 daily, 4
+  weekly, 3 monthly snapshots.
 - **Fleet dashboard** — project search, grid/list layouts, equal summary
   cards, branch/running counts and a global recent-activity feed.
 - **Light, dark or system theme** — persistent per browser, switchable from

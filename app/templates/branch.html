@@ -195,6 +195,22 @@
         Odoo backup zip. Maximum 2 GB. A zip restores its filestore too;
         other formats restore the database only.
       </p>
+      {% if can_neutralize %}
+      <label class="row gap">
+        <input type="checkbox" name="neutralize" value="1">
+        Neutralize the imported database
+      </label>
+      <p class="muted small">
+        Disables outgoing email, crons and integrations (including webhooks
+        where the installed modules support it) so a production copy can be
+        used safely in staging or development. Runs after the database and
+        filestore are imported.
+        {% if not neutralize_native %}
+        Odoo 15 uses the platform fallback: core mail servers and crons are
+        disabled; module-specific rules need Odoo 16+.
+        {% endif %}
+      </p>
+      {% endif %}
       <p class="muted small danger-text">
         This replaces the current database. Take a backup first if you may need it.
         The dump must match this branch's Odoo and PostgreSQL versions.

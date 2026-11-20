@@ -35,7 +35,7 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Reset a lost authenticator | `manage reset-2fa --email user@example.com`, then sign in and set up 2FA again. |
 | Uninstall platform | `sudo ./uninstall.sh` (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); `--dry-run` previews. |
 | Take a backup now | branch → Backups → tick/untick *Include filestore* → *Create backup* (or `manage backup-all [--without-filestore]`). |
-| Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`. |
+| Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`; optionally neutralize the imported database. |
 | Download a backup | branch → Backups → Download (db dump only; the filestore tarball sits next to it under `/var/lib/odoo-paas/backups/`). |
 | Restore a backup | branch → Backups → Restore (admin). Container stops; press Start when ready. |
 | Read captured emails | SSH tunnel `ssh -L 8025:127.0.0.1:8025 root@SERVER` then http://127.0.0.1:8025 |
@@ -183,8 +183,17 @@ tab shows the status and a live log that refreshes while it runs. Start/Deploy/S
 job finishes. The container is stopped during import and stays stopped
 afterward; press **Start** or **Deploy** when ready. A zip also replaces the
 Odoo filestore for that branch's database; other formats restore the database
-only and leave the current filestore unchanged. The source dump must use the
-branch's Odoo and PostgreSQL versions. Take
+only and leave the current filestore unchanged.
+
+Tick **Neutralize the imported database** when importing a production copy into
+staging or development. Odoo 16+ runs Odoo's native `neutralize` command, so
+module-provided rules apply. Odoo 15 has no such command; the platform fallback
+disables core outgoing mail servers and crons, clears their SMTP credentials,
+and sets `database.is_neutralized`. Neutralization is not a sandbox and does
+not delete business data. This option applies to imports only; restoring an
+existing platform backup does not neutralize it.
+
+The source dump must use the branch's Odoo and PostgreSQL versions. Take
 a backup before importing if the current data may be needed. If the control
 plane has a custom domain, re-save it once after updating so nginx picks up the
 larger upload limit.

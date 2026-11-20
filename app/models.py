@@ -125,6 +125,7 @@ class RestoreJob(SQLModel, table=True):
     kind: str = "import"  # import|backup
     source_path: str = ""
     source_name: str = ""
+    neutralize: bool = False  # imports only
     status: str = RESTORE_QUEUED  # queued|running|succeeded|failed
     step: str = "queued"
     error: str = ""

@@ -6,6 +6,7 @@
       <h3>Database restore #{{ restore_job.id }}</h3>
       <p class="muted small">
         {{ restore_job.kind }} · {{ restore_job.source_name or 'backup' }}
+        {% if restore_job.neutralize %} · neutralize requested{% endif %}
       </p>
     </div>
     <span class="pill {{ restore_job.status }}">{{ restore_job.status }}</span>
@@ -15,7 +16,11 @@
   </p>
   <pre class="restore-log">{{ restore_log_tail }}</pre>
   {% if restore_job.status == 'succeeded' %}
-  <p class="small">The database is restored. The container remains stopped; use <strong>Start</strong> or <strong>Deploy</strong>.</p>
+  <p class="small">
+    The database is restored{% if restore_job.neutralize %} and neutralized
+    (outgoing email, crons and integrations are disabled){% endif %}. The
+    container remains stopped; use <strong>Start</strong> or <strong>Deploy</strong>.
+  </p>
   {% elif restore_job.status == 'failed' %}
   <p class="small danger-text">The restore failed. Review the log before starting the branch again.</p>
   {% elif restore_active %}

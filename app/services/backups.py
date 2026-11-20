@@ -231,6 +231,15 @@ def _log(log: Optional[Callable[[str], None]], message: str) -> None:
         log(message)
 
 
+def _neutralize(
+    branch, enabled: bool, log: Optional[Callable[[str], None]] = None
+) -> None:
+    if not enabled:
+        return
+    _log(log, "neutralizing database (outgoing email, crons and integrations)")
+    docker_ctl.neutralize_database(branch, log or (lambda _message: None))
+
+
 def _import_zip(
     branch, src: Path, log: Optional[Callable[[str], None]] = None
 ) -> None:
@@ -268,6 +277,8 @@ def import_database(
     src: Path,
     original_name: str,
     log: Optional[Callable[[str], None]] = None,
+    *,
+    neutralize: bool = False,
 ) -> str:
     """Restore an uploaded PostgreSQL/Odoo backup into a branch."""
     _log(log, f"detecting backup format for {Path(original_name).name}")
@@ -294,6 +305,8 @@ def import_database(
             compressed=fmt == "sql.gz",
         )
         label = "SQL dump"
+    _neutralize(branch, neutralize, log)
+    suffix = ", neutralized" if neutralize else ""
     with session_scope() as session:
         session.add(
             Event(
@@ -302,7 +315,7 @@ def import_database(
                 kind="backup",
                 message=(
                     f"Imported {label} '{Path(original_name).name[:120]}' "
-                    f"into '{branch.name}' (container stopped)"
+                    f"into '{branch.name}' (container stopped{suffix})"
                 ),
             )
         )
@@ -368,6 +381,7 @@ def run_restore_job(job_id: int) -> None:
         kind = job.kind
         source_path = job.source_path
         source_name = job.source_name
+        neutralize = bool(job.neutralize) and kind == "import"
 
     settings.LOG_ROOT.mkdir(parents=True, exist_ok=True)
     log_path = settings.LOG_ROOT / f"restore-{job_id}.log"
@@ -391,7 +405,10 @@ def run_restore_job(job_id: int) -> None:
             session.add(branch)
         session.add(job)
 
-    log(f"Restore #{job_id} | branch '{branch.name}' | kind {kind}")
+    log(
+        f"Restore #{job_id} | branch '{branch.name}' | kind {kind}"
+        + (f" | neutralize {neutralize}" if kind == "import" else "")
+    )
     try:
         if kind == "backup":
             if backup is None:
@@ -402,7 +419,13 @@ def run_restore_job(job_id: int) -> None:
             if not source_path:
                 raise PlatformError("uploaded backup file is missing")
             log(f"importing {source_name or Path(source_path).name}")
-            import_database(branch, Path(source_path), source_name, log=log)
+            import_database(
+                branch,
+                Path(source_path),
+                source_name,
+                log=log,
+                neutralize=neutralize,
+            )
         with session_scope() as session:
             job = session.get(RestoreJob, job_id)
             if job is not None:
@@ -414,7 +437,10 @@ def run_restore_job(job_id: int) -> None:
             if branch is not None:
                 branch.status = "stopped"
                 session.add(branch)
-        log("restore complete; container remains stopped")
+        if neutralize:
+            log("restore complete; database neutralized; container remains stopped")
+        else:
+            log("restore complete; container remains stopped")
     except Exception as exc:  # noqa: BLE001 - surfaced in the job log/status
         detail = str(exc).replace("\n", " ")[:2000]
         log(f"ERROR: {detail}")
