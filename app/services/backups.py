@@ -79,42 +79,52 @@ def latest_restore(session: Session, branch_id: int) -> Optional[RestoreJob]:
     ).first()
 
 
-def create_backup(branch, *, kind: str = "manual", note: str = "") -> Backup:
+def create_backup(
+    branch,
+    *,
+    kind: str = "manual",
+    note: str = "",
+    include_filestore: bool = True,
+) -> Backup:
     out = backup_dir(branch)
     out.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     db_file = out / f"db-{stamp}.dump"
-    fs_file = out / f"filestore-{stamp}.tgz"
+    fs_file: Optional[Path] = None
 
     docker_ctl.dump_database(
         branch.db_name,
         db_file,
         container=docker_ctl.postgres_container(branch),
     )
-    base = docker_ctl.filestore_dir(branch)
-    with tarfile.open(fs_file, "w:gz") as tar:
-        if base.exists():
-            tar.add(base, arcname=".")
-    size = db_file.stat().st_size + fs_file.stat().st_size
+    size = db_file.stat().st_size
+    if include_filestore:
+        fs_file = out / f"filestore-{stamp}.tgz"
+        base = docker_ctl.filestore_dir(branch)
+        with tarfile.open(fs_file, "w:gz") as tar:
+            if base.exists():
+                tar.add(base, arcname=".")
+        size += fs_file.stat().st_size
 
     with session_scope() as session:
         backup = Backup(
             branch_id=branch.id,
             kind=kind,
             db_path=str(db_file),
-            filestore_path=str(fs_file),
+            filestore_path=str(fs_file) if fs_file else "",
             size_bytes=size,
             note=note,
         )
         session.add(backup)
         session.commit()
         session.refresh(backup)
+        contents = "database + filestore" if include_filestore else "database only"
         session.add(
             Event(
                 project_id=branch.project_id,
                 branch_id=branch.id,
                 kind="backup",
-                message=f"{kind} backup created ({size // 1024} KB)",
+                message=f"{kind} backup created ({size // 1024} KB, {contents})",
             )
         )
         return backup
@@ -221,6 +231,15 @@ def _log(log: Optional[Callable[[str], None]], message: str) -> None:
         log(message)
 
 
+def _neutralize(
+    branch, enabled: bool, log: Optional[Callable[[str], None]] = None
+) -> None:
+    if not enabled:
+        return
+    _log(log, "neutralizing database (outgoing email, crons and integrations)")
+    docker_ctl.neutralize_database(branch, log or (lambda _message: None))
+
+
 def _import_zip(
     branch, src: Path, log: Optional[Callable[[str], None]] = None
 ) -> None:
@@ -258,6 +277,8 @@ def import_database(
     src: Path,
     original_name: str,
     log: Optional[Callable[[str], None]] = None,
+    *,
+    neutralize: bool = False,
 ) -> str:
     """Restore an uploaded PostgreSQL/Odoo backup into a branch."""
     _log(log, f"detecting backup format for {Path(original_name).name}")
@@ -284,6 +305,8 @@ def import_database(
             compressed=fmt == "sql.gz",
         )
         label = "SQL dump"
+    _neutralize(branch, neutralize, log)
+    suffix = ", neutralized" if neutralize else ""
     with session_scope() as session:
         session.add(
             Event(
@@ -292,7 +315,7 @@ def import_database(
                 kind="backup",
                 message=(
                     f"Imported {label} '{Path(original_name).name[:120]}' "
-                    f"into '{branch.name}' (container stopped)"
+                    f"into '{branch.name}' (container stopped{suffix})"
                 ),
             )
         )
@@ -303,6 +326,8 @@ def restore_backup(
     branch,
     backup: Backup,
     log: Optional[Callable[[str], None]] = None,
+    *,
+    neutralize: bool = False,
 ) -> None:
     db_path = Path(backup.db_path)
     if not db_path.exists():
@@ -328,14 +353,19 @@ def restore_backup(
                 tar.extractall(base)
         docker_ctl.make_tree_container_writable(base)
     else:
-        _log(log, "backup has no filestore archive")
+        _log(log, "backup has no filestore archive; existing filestore left unchanged")
+    _neutralize(branch, neutralize, log)
+    suffix = ", neutralized" if neutralize else ""
     with session_scope() as session:
         session.add(
             Event(
                 project_id=branch.project_id,
                 branch_id=branch.id,
                 kind="backup",
-                message=f"Backup #{backup.id} restored into '{branch.name}' (container stopped)",
+                message=(
+                    f"Backup #{backup.id} restored into '{branch.name}' "
+                    f"(container stopped{suffix})"
+                ),
             )
         )
 
@@ -358,6 +388,7 @@ def run_restore_job(job_id: int) -> None:
         kind = job.kind
         source_path = job.source_path
         source_name = job.source_name
+        neutralize = bool(job.neutralize)
 
     settings.LOG_ROOT.mkdir(parents=True, exist_ok=True)
     log_path = settings.LOG_ROOT / f"restore-{job_id}.log"
@@ -381,18 +412,27 @@ def run_restore_job(job_id: int) -> None:
             session.add(branch)
         session.add(job)
 
-    log(f"Restore #{job_id} | branch '{branch.name}' | kind {kind}")
+    log(
+        f"Restore #{job_id} | branch '{branch.name}' | kind {kind} "
+        f"| neutralize {neutralize}"
+    )
     try:
         if kind == "backup":
             if backup is None:
                 raise PlatformError("backup not found")
             log(f"restoring backup #{backup.id}")
-            restore_backup(branch, backup, log=log)
+            restore_backup(branch, backup, log=log, neutralize=neutralize)
         else:
             if not source_path:
                 raise PlatformError("uploaded backup file is missing")
             log(f"importing {source_name or Path(source_path).name}")
-            import_database(branch, Path(source_path), source_name, log=log)
+            import_database(
+                branch,
+                Path(source_path),
+                source_name,
+                log=log,
+                neutralize=neutralize,
+            )
         with session_scope() as session:
             job = session.get(RestoreJob, job_id)
             if job is not None:
@@ -404,7 +444,10 @@ def run_restore_job(job_id: int) -> None:
             if branch is not None:
                 branch.status = "stopped"
                 session.add(branch)
-        log("restore complete; container remains stopped")
+        if neutralize:
+            log("restore complete; database neutralized; container remains stopped")
+        else:
+            log("restore complete; container remains stopped")
     except Exception as exc:  # noqa: BLE001 - surfaced in the job log/status
         detail = str(exc).replace("\n", " ")[:2000]
         log(f"ERROR: {detail}")

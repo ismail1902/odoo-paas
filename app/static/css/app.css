@@ -394,6 +394,8 @@ button.primary:hover, .primary:hover { background: var(--accent-2); }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .table th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+.backup-create, .restore-actions { flex-wrap: wrap; }
+.backup-create { justify-content: flex-end; }
 
 /* pills */
 .pill {

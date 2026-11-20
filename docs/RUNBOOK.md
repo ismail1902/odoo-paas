@@ -34,10 +34,10 @@ tail -f /var/lib/odoo-paas/logs/build-<id>.log
 | Enable two-factor authentication | topbar **Settings** → *Two-factor authentication* → set up, scan the QR code, verify a code, save the recovery codes. |
 | Reset a lost authenticator | `manage reset-2fa --email user@example.com`, then sign in and set up 2FA again. |
 | Uninstall platform | `sudo ./uninstall.sh` (keeps data) or `sudo ./uninstall.sh --purge` (full wipe); `--dry-run` previews. |
-| Take a backup now | branch → Backups → *Create backup* (or `manage backup-all`). |
-| Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`. |
+| Take a backup now | branch → Backups → tick/untick *Include filestore* → *Create backup* (or `manage backup-all [--without-filestore]`). |
+| Import an external database | branch → Backups → **Import database** (admin); accepts `.dump`, `.sql`, `.sql.gz` or Odoo `.zip`; optionally neutralize. |
 | Download a backup | branch → Backups → Download (db dump only; the filestore tarball sits next to it under `/var/lib/odoo-paas/backups/`). |
-| Restore a backup | branch → Backups → Restore (admin). Container stops; press Start when ready. |
+| Restore a backup | branch → Backups → tick *Neutralize* if this is a staging/dev copy → Restore (admin). Container stops; press Start when ready. |
 | Read captured emails | SSH tunnel `ssh -L 8025:127.0.0.1:8025 root@SERVER` then http://127.0.0.1:8025 |
 | psql into a branch DB | branch → Shell → `psql` (PG* env vars are set). |
 | Change Odoo server configuration | Project page → ⚙ **Settings** → *Odoo configuration* → enable/set options → Save → Deploy or Start the branch. |
@@ -156,6 +156,32 @@ safe workflow here is:
 
 Backups are cheap; take one before every production `-u all` deploy.
 
+## Backup contents and neutralization
+
+**Create backup** includes both the database dump and the filestore tarball by
+default. Untick **Include filestore** to create a smaller, faster database-only
+backup; the table's *Contents* column shows `DB + filestore` or `DB only`.
+
+Restoring a database-only backup replaces the database but leaves the branch's
+current filestore unchanged (the restore log records this). Use a full backup
+when attachments must be rolled back too.
+
+Restore and import dialogs also offer **Neutralize the restored database**.
+When selected, Odoo's native `neutralize` command runs after the database and
+filestore are restored. It disables outgoing mail servers, crons and
+integrations such as webhooks (depending on the installed modules) and sets
+`database.is_neutralized`, which is what you normally want for a staging or
+development copy of production. It is not a sandbox and does not delete
+business data.
+
+Odoo 16+ runs Odoo's own `neutralize` command, so module-provided rules apply.
+Odoo 15 has no such command; the platform fallback disables core outgoing mail
+servers and crons, clears their SMTP credentials, and sets
+`database.is_neutralized`. Module-specific rules on Odoo 15 are not available.
+
+If neutralization fails, the restore job is marked failed and the log shows the
+command output; the database has already been restored.
+
 ## Importing an external database
 
 Admins can use **branch → Backups → Import database** to replace a branch
@@ -173,7 +199,9 @@ tab shows the status and a live log that refreshes while it runs. Start/Deploy/S
 job finishes. The container is stopped during import and stays stopped
 afterward; press **Start** or **Deploy** when ready. A zip also replaces the
 Odoo filestore for that branch's database; other formats restore the database
-only. The source dump must use the branch's Odoo and PostgreSQL versions. Take
+only and leave the current filestore unchanged. Tick **Neutralize the restored
+database** when importing a production copy into staging/development. The
+source dump must use the branch's Odoo and PostgreSQL versions. Take
 a backup before importing if the current data may be needed. If the control
 plane has a custom domain, re-save it once after updating so nginx picks up the
 larger upload limit.

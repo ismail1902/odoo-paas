@@ -120,7 +120,13 @@
       <button type="button" data-open-import-backup
               {% if restore_active %}disabled title="A restore is already running"{% endif %}>Import database</button>
       {% endif %}
-      <form method="post" action="/branches/{{ branch.id }}/backups/create"><button class="primary">Create backup</button></form>
+      <form method="post" action="/branches/{{ branch.id }}/backups/create" class="row gap backup-create">
+        <label class="row gap small" title="Include the Odoo filestore in this backup">
+          <input type="checkbox" name="include_filestore" value="1" checked>
+          Include filestore
+        </label>
+        <button class="primary">Create backup</button>
+      </form>
     </div>
   </div>
   <p class="muted small">Retention: newest 3 days kept, then 7 daily + 4 weekly + 3 monthly. Files live in the platform data directory.</p>
@@ -133,20 +139,27 @@
   </p>
   {% endif %}
   <table class="table small">
-    <thead><tr><th>#</th><th>Kind</th><th>Created</th><th>Size</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Kind</th><th>Contents</th><th>Created</th><th>Size</th><th></th></tr></thead>
     <tbody>
     {% for backup in backups %}
       <tr>
         <td>#{{ backup.id }}</td>
         <td>{{ backup.kind }}</td>
+        <td class="muted">{{ 'DB + filestore' if backup.filestore_path else 'DB only' }}</td>
         <td class="muted">{{ backup.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
         <td class="muted">{{ (backup.size_bytes // 1024) }} KB</td>
         <td class="row gap">
           <a class="small-btn" href="/backups/{{ backup.id }}/download">Download</a>
           {% if user.role == 'admin' %}
-          <form method="post" action="/backups/{{ backup.id }}/restore"
-                onsubmit="return confirm('Restore backup #{{ backup.id }} into {{ branch.name }}? The current database will be replaced.')">
+          <form method="post" action="/backups/{{ backup.id }}/restore" class="row gap restore-actions"
+                onsubmit="return confirm('Restore backup #{{ backup.id }} into {{ branch.name }}? {% if backup.filestore_path %}The current database and filestore will be replaced.{% else %}The current database will be replaced; this backup has no filestore, so the current filestore is kept.{% endif %}')">
             <input type="hidden" name="confirm" value="restore">
+            {% if can_neutralize %}
+            <label class="row gap small" title="Disable outgoing email, crons and integrations after restoring">
+              <input type="checkbox" name="neutralize" value="1">
+              Neutralize
+            </label>
+            {% endif %}
             <button class="small-btn" {% if restore_active %}disabled title="A restore is already running"{% endif %}>Restore</button>
           </form>
           {% endif %}
@@ -157,10 +170,17 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="5" class="muted">No backups yet</td></tr>
+      <tr><td colspan="6" class="muted">No backups yet</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  {% if can_neutralize and not neutralize_native %}
+  <p class="muted small">
+    On Odoo 15, <strong>Neutralize</strong> applies the platform fallback:
+    core outgoing mail servers and crons are disabled. Odoo 16+ also applies
+    module-specific neutralization rules.
+  </p>
+  {% endif %}
 </div>
 
 {% if user.role == 'admin' %}
@@ -188,6 +208,22 @@
         Odoo backup zip. Maximum 2 GB. A zip restores its filestore too;
         other formats restore the database only.
       </p>
+      {% if can_neutralize %}
+      <label class="row gap">
+        <input type="checkbox" name="neutralize" value="1">
+        Neutralize the restored database
+      </label>
+      <p class="muted small">
+        Disables outgoing email, crons and integrations (including webhooks
+        where the installed modules support it) so a production copy can be
+        used safely in staging or development. Runs after the database and
+        filestore are restored.
+        {% if not neutralize_native %}
+        Odoo 15 uses the platform fallback: core mail servers and crons are
+        disabled; module-specific rules need Odoo 16+.
+        {% endif %}
+      </p>
+      {% endif %}
       <p class="muted small danger-text">
         This replaces the current database. Take a backup first if you may need it.
         The dump must match this branch's Odoo and PostgreSQL versions.

@@ -90,7 +90,7 @@ The shell starts as `bash` with cwd `/mnt/user` inside the branch container;
 .venv/bin/python -m app.manage create-admin  --email a@b --password s [--role admin|developer|tester]
 .venv/bin/python -m app.manage set-password  --email a@b --password s
 .venv/bin/python -m app.manage reset-2fa     --email a@b
-.venv/bin/python -m app.manage backup-all    [--kind manual|auto|update]
+.venv/bin/python -m app.manage backup-all    [--kind manual|auto|update] [--without-filestore]
 .venv/bin/python -m app.manage retention
 .venv/bin/python -m app.manage doctor
 ```

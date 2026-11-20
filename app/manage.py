@@ -6,7 +6,7 @@ Usage (from the repository root, venv active as needed):
     python -m app.manage create-admin --email a@b.c --password secret [--role admin]
     python -m app.manage set-password --email a@b.c --password new
     python -m app.manage reset-2fa --email a@b.c
-    python -m app.manage backup-all [--kind manual]
+    python -m app.manage backup-all [--kind manual] [--without-filestore]
     python -m app.manage retention
     python -m app.manage doctor
 """
@@ -65,7 +65,12 @@ def cmd_backup_all(args) -> None:
         branches = session.exec(select(Branch)).all()
     for branch in branches:
         try:
-            backup = backups.create_backup(branch, kind=args.kind, note="cli")
+            backup = backups.create_backup(
+                branch,
+                kind=args.kind,
+                note="cli",
+                include_filestore=not args.without_filestore,
+            )
             print(f"branch {branch.id} ({branch.name}): backup #{backup.id}")
         except Exception as exc:  # noqa: BLE001
             print(f"branch {branch.id} ({branch.name}): FAILED - {exc}")
@@ -160,6 +165,11 @@ def main() -> None:
 
     backup = sub.add_parser("backup-all", help="back up every branch now")
     backup.add_argument("--kind", default="manual", choices=["manual", "auto", "update"])
+    backup.add_argument(
+        "--without-filestore",
+        action="store_true",
+        help="back up databases only, without filestore archives",
+    )
     backup.set_defaults(func=cmd_backup_all)
 
     sub.add_parser("retention", help="apply backup retention").set_defaults(func=cmd_retention)
