@@ -34,7 +34,7 @@ Treat UI accounts as server administrators and prefer `ufw` to restrict
 
 Branch and control-plane nginx configs send:
 
-- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- `Strict-Transport-Security: max-age=31536000`
   (HTTPS server blocks only)
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `Permissions-Policy: camera=(self), geolocation=(self), microphone=(self),
