@@ -30,6 +30,28 @@ Treat UI accounts as server administrators and prefer `ufw` to restrict
   as SHA-256 hashes, and deleted when used. Disabling 2FA requires the
   account password. `manage reset-2fa --email` is the lockout path.
 
+## HTTP security headers
+
+Branch and control-plane nginx configs send:
+
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+  (HTTPS server blocks only)
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(self), geolocation=(self), microphone=(self),
+  payment=(self), usb=()`
+
+Odoo itself supplies `Content-Security-Policy: frame-ancestors 'self'`,
+`X-Frame-Options: SAMEORIGIN` and `X-Content-Type-Options: nosniff`.
+First-party camera/geolocation/microphone/payment access stays available for
+Odoo features; third-party frames are blocked by the policy.
+
+If **Cloudflare** proxies the domain, its edge HSTS setting can override the
+origin header. A response of
+`Strict-Transport-Security: max-age=0; includeSubDomains; preload` means HSTS
+is disabled at Cloudflare. Set **SSL/TLS → Edge Certificates → HSTS** to a
+positive max-age (6–12 months), or remove any Transform Rule that sets
+`max-age=0`.
+
 ## Roles
 
 `developer` < `tester` < `admin`.

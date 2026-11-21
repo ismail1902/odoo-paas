@@ -22,6 +22,11 @@ DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
+SECURITY_HEADERS = (
+    '    add_header Referrer-Policy "strict-origin-when-cross-origin" always;\n'
+    '    add_header Permissions-Policy "camera=(self), geolocation=(self), '
+    'microphone=(self), payment=(self), usb=()" always;\n'
+)
 
 
 def available() -> bool:
@@ -136,7 +141,7 @@ def _render(
     proxy_read_timeout 720s;
     proxy_connect_timeout 720s;
     proxy_send_timeout 720s;
-"""
+{SECURITY_HEADERS}"""
     http_body = (
         f"{challenge}\n    location / {{ return 301 https://$host$request_uri; }}"
         if ssl
@@ -334,7 +339,7 @@ def _render_control_plane(domain: str, ssl: bool) -> str:
     proxy_read_timeout 720s;
     proxy_connect_timeout 720s;
     proxy_send_timeout 720s;
-"""
+{SECURITY_HEADERS}"""
     http_body = (
         f"{challenge}\n    location / {{ return 301 https://$host$request_uri; }}"
         if ssl
